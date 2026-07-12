@@ -1,0 +1,149 @@
+import 'dart:convert';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+
+import '../models/ride.dart';
+import '../models/user.dart';
+import '../models/weather_point.dart';
+import 'api_exception.dart';
+
+class ApiClient {
+  ApiClient._();
+  static final ApiClient instance = ApiClient._();
+
+  static const String baseUrl = 'https://cyclingngin.duckdns.org/api';
+
+  static const _storage = FlutterSecureStorage();
+  static const _tokenKey = 'auth_token';
+
+  String? _token;
+
+  Future<String?> get token async => _token ??= await _storage.read(key: _tokenKey);
+
+  Future<bool> get isLoggedIn async => (await token) != null;
+
+  Future<Map<String, String>> _headers({bool json = true}) async {
+    final t = await token;
+    return {
+      if (json) 'Content-Type': 'application/json',
+      if (t != null) 'Authorization': 'Token $t',
+    };
+  }
+
+  Never _throwForResponse(http.BaseResponse response, String body) {
+    Map<String, dynamic>? decoded;
+    try {
+      decoded = jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      throw ApiException('Unexpected server error (${response.statusCode}).');
+    }
+    if (decoded.containsKey('detail')) {
+      throw ApiException(decoded['detail'] as String);
+    }
+    final fieldErrors = <String, List<String>>{};
+    decoded.forEach((key, value) {
+      if (value is List) {
+        fieldErrors[key] = value.map((e) => e.toString()).toList();
+      }
+    });
+    final message = fieldErrors.values.expand((v) => v).join('\n');
+    throw ApiException(
+      message.isEmpty ? 'Request failed (${response.statusCode}).' : message,
+      fieldErrors: fieldErrors,
+    );
+  }
+
+  Future<String> login(String username, String password) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/token/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    if (response.statusCode != 200) {
+      _throwForResponse(response, response.body);
+    }
+    final t = (jsonDecode(response.body) as Map<String, dynamic>)['token'] as String;
+    _token = t;
+    await _storage.write(key: _tokenKey, value: t);
+    return t;
+  }
+
+  Future<void> logout() async {
+    _token = null;
+    await _storage.delete(key: _tokenKey);
+  }
+
+  Future<AppUser> me() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/auth/me/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<RidePage> listRides({String? pageUrl}) async {
+    final uri = Uri.parse(pageUrl ?? '$baseUrl/rides/');
+    final response = await http.get(uri, headers: await _headers());
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return RidePage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<Ride> getRide(int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/rides/$id/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<Ride> uploadRide({required String filePath, String? name}) async {
+    final uri = Uri.parse('$baseUrl/rides/');
+    final request = http.MultipartRequest('POST', uri);
+    final t = await token;
+    if (t != null) request.headers['Authorization'] = 'Token $t';
+    if (name != null && name.isNotEmpty) request.fields['name'] = name;
+    request.files.add(await http.MultipartFile.fromPath('file', filePath));
+
+    final streamed = await request.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 201) _throwForResponse(streamed, body);
+    return Ride.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  Future<Ride> renameRide(int id, String name) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/rides/$id/'),
+      headers: await _headers(),
+      body: jsonEncode({'name': name}),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteRide(int id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/rides/$id/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 204) _throwForResponse(response, response.body);
+  }
+
+  Future<List<WeatherPoint>> getWeather(
+    int id, {
+    required DateTime start,
+    required DateTime finish,
+  }) async {
+    String iso(DateTime dt) => dt.toIso8601String().split('.').first;
+    final uri = Uri.parse('$baseUrl/rides/$id/weather/').replace(
+      queryParameters: {'start': iso(start), 'finish': iso(finish)},
+    );
+    final response = await http.get(uri, headers: await _headers());
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return (jsonDecode(response.body) as List<dynamic>)
+        .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+}
