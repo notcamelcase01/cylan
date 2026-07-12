@@ -35,14 +35,41 @@ final LatLngBounds _worldBounds = LatLngBounds(
 /// weather list.
 const Duration _weatherBubbleGap = Duration(minutes: 30);
 
+/// Minimum ground distance between two shown weather bubbles, as a fraction of
+/// the ride's total distance. ETA spacing alone doesn't stop bubbles stacking
+/// where the route crosses itself (loops, out-and-backs): two points far apart
+/// in time can sit on nearly the same spot. Also requiring this geographic gap
+/// keeps those from overlapping, and scaling it to ride length keeps the
+/// spacing sensible on both short and long rides.
+const double _weatherBubbleMinDistanceFraction = 0.02;
+
+const Distance _distance = Distance();
+
 /// Picks a readable subset of weather points spaced at least [_weatherBubbleGap]
-/// apart by ETA, always keeping the first and last so the whole route is
-/// represented.
+/// apart by ETA *and* [_weatherBubbleMinDistanceFraction] of the ride's total
+/// distance apart on the ground from every other kept point, always keeping the
+/// first and last so the whole route is represented.
 List<WeatherPoint> _thinWeather(List<WeatherPoint> points) {
   if (points.length <= 2) return points;
+  // Ride distance drives the geographic spacing threshold. Points aren't
+  // guaranteed sorted by distance, so take the max rather than the last.
+  final maxDistanceKm =
+      points.map((p) => p.distanceKm).reduce(math.max);
+  final minMeters = maxDistanceKm * 1000 * _weatherBubbleMinDistanceFraction;
   final kept = <WeatherPoint>[points.first];
+  bool clearsAllKept(WeatherPoint p) {
+    final at = LatLng(p.latitude, p.longitude);
+    for (final k in kept) {
+      if (_distance(at, LatLng(k.latitude, k.longitude)) < minMeters) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   for (final p in points.skip(1)) {
-    if (p.eta.difference(kept.last.eta) >= _weatherBubbleGap) {
+    if (p.eta.difference(kept.last.eta) >= _weatherBubbleGap &&
+        clearsAllKept(p)) {
       kept.add(p);
     }
   }
@@ -113,7 +140,9 @@ class _RouteMapState extends State<RouteMap> {
   void _followLocation(LatLng loc) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final zoom = _hasCenteredOnLive ? _mapController.camera.zoom : _liveFollowZoom;
+      final zoom = _hasCenteredOnLive
+          ? _mapController.camera.zoom
+          : _liveFollowZoom;
       _hasCenteredOnLive = true;
       _mapController.move(loc, zoom);
     });
@@ -144,7 +173,9 @@ class _RouteMapState extends State<RouteMap> {
         maxZoom: _maxZoom,
         cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
         interactionOptions: InteractionOptions(
-          flags: widget.interactive ? InteractiveFlag.all : InteractiveFlag.none,
+          flags: widget.interactive
+              ? InteractiveFlag.all
+              : InteractiveFlag.none,
         ),
       ),
       children: [
@@ -172,8 +203,11 @@ class _RouteMapState extends State<RouteMap> {
             if (widget.nextTurn != null)
               Marker(
                 point: widget.nextTurn!,
-                child:
-                    const Icon(Icons.turn_right, color: Colors.orange, size: 32),
+                child: const Icon(
+                  Icons.turn_right,
+                  color: Colors.orange,
+                  size: 32,
+                ),
               ),
             if (widget.liveLocation != null)
               Marker(
@@ -192,8 +226,9 @@ class _RouteMapState extends State<RouteMap> {
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: [
                       BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 3),
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 3,
+                      ),
                     ],
                   ),
                 ),
@@ -206,9 +241,14 @@ class _RouteMapState extends State<RouteMap> {
               for (final wp in weatherPoints)
                 Marker(
                   point: LatLng(wp.latitude, wp.longitude),
-                  width: 72,
-                  height: 36,
-                  child: _WeatherBubble(point: wp),
+                  width: 40,
+                  height: 20,
+                  // Scales the natural-size bubble down to fit the marker box
+                  // so it can never overflow, whatever the font sizes / text.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _WeatherBubble(point: wp),
+                  ),
                 ),
             ],
           ),
@@ -230,27 +270,28 @@ class _WeatherBubble extends StatelessWidget {
         ? '–'
         : '${point.temperatureC!.round()}°';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(6),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 2),
         ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(point.icon, style: const TextStyle(fontSize: 13)),
-          const SizedBox(width: 2),
-          Text(temp,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(point.icon, style: const TextStyle(fontSize: 8)),
+          const SizedBox(width: 1),
+          Text(
+            temp,
+            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
+          ),
           if (point.windDirectionDeg != null) ...[
-            const SizedBox(width: 2),
+            const SizedBox(width: 1),
             Transform.rotate(
               angle: (point.windDirectionDeg! + 180) % 360 * math.pi / 180,
-              child: const Text('↑', style: TextStyle(fontSize: 12)),
+              child: const Text('↑', style: TextStyle(fontSize: 8)),
             ),
           ],
         ],
