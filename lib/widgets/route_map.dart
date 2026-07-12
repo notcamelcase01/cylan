@@ -12,11 +12,52 @@ import '../models/weather_point.dart';
 /// tiles at very low zoom, which has caused GPU/memory crashes in
 /// flutter_map (and most other slippy-map implementations) — capping how
 /// far out the camera can go avoids that class of crash.
-const double _minZoom = 2.5;
+const double _minZoom = 3;
 const double _maxZoom = 19;
 
 /// Zoom used the first time the camera locks onto a live GPS fix.
 const double _liveFollowZoom = 17;
+
+/// Keeps the camera inside a single copy of the world (Web-Mercator latitude
+/// limits). This is the key guard against the fast-zoom-out crash: it stops
+/// the camera from reaching the very-low-zoom state where flutter_map tiles
+/// the whole world (and repeats it horizontally), which both crashes on
+/// device and duplicates every marker across each world copy.
+final LatLngBounds _worldBounds = LatLngBounds(
+  const LatLng(-85.05, -179.9),
+  const LatLng(85.05, 179.9),
+);
+
+/// Minimum gap between weather bubbles shown on the map, by estimated arrival
+/// time. The API returns a fixed number of points regardless of ride length,
+/// so on a short ride they bunch up (e.g. one per km); thinning to ~one per
+/// 30 min of travel keeps the map readable. The full set still shows in the
+/// weather list.
+const Duration _weatherBubbleGap = Duration(minutes: 30);
+
+/// Picks a readable subset of weather points spaced at least [_weatherBubbleGap]
+/// apart by ETA, always keeping the first and last so the whole route is
+/// represented.
+List<WeatherPoint> _thinWeather(List<WeatherPoint> points) {
+  if (points.length <= 2) return points;
+  final kept = <WeatherPoint>[points.first];
+  for (final p in points.skip(1)) {
+    if (p.eta.difference(kept.last.eta) >= _weatherBubbleGap) {
+      kept.add(p);
+    }
+  }
+  final last = points.last;
+  if (kept.last != last) {
+    // Replace a too-close tail point, or append, so the finish is shown.
+    if (last.eta.difference(kept.last.eta) < _weatherBubbleGap &&
+        kept.length > 1) {
+      kept[kept.length - 1] = last;
+    } else {
+      kept.add(last);
+    }
+  }
+  return kept;
+}
 
 class RouteMap extends StatefulWidget {
   final RideProfile profile;
@@ -90,6 +131,7 @@ class _RouteMapState extends State<RouteMap> {
     ];
     final bounds = LatLngBounds.fromPoints(points);
     final routeColor = Theme.of(context).colorScheme.primary;
+    final weatherPoints = _thinWeather(widget.weatherPoints);
 
     return FlutterMap(
       mapController: _mapController,
@@ -100,6 +142,7 @@ class _RouteMapState extends State<RouteMap> {
         ),
         minZoom: _minZoom,
         maxZoom: _maxZoom,
+        cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
         interactionOptions: InteractionOptions(
           flags: widget.interactive ? InteractiveFlag.all : InteractiveFlag.none,
         ),
@@ -157,10 +200,10 @@ class _RouteMapState extends State<RouteMap> {
               ),
           ],
         ),
-        if (widget.weatherPoints.isNotEmpty)
+        if (weatherPoints.isNotEmpty)
           MarkerLayer(
             markers: [
-              for (final wp in widget.weatherPoints)
+              for (final wp in weatherPoints)
                 Marker(
                   point: LatLng(wp.latitude, wp.longitude),
                   width: 72,
