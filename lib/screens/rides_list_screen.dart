@@ -4,11 +4,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ride.dart';
-import '../providers/auth_provider.dart';
 import '../providers/rides_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/weather_cache_provider.dart';
-import 'auth_gate.dart';
+import 'profile_screen.dart';
 import 'ride_detail_screen.dart';
 import 'strava_import_screen.dart';
 
@@ -177,17 +176,11 @@ class _RidesListViewState extends State<_RidesListView> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Log out',
-            onPressed: () async {
-              await context.read<AuthProvider>().logout();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const AuthGate()),
-                  (route) => false,
-                );
-              }
-            },
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
           ),
         ],
       ),

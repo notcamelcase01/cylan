@@ -3,16 +3,17 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../widgets/app_background.dart';
-import 'signup_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+/// Minimal account creation: just username + password. Name and email are
+/// optional and set later on the profile screen.
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -28,13 +29,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final success = await auth.login(
-      _usernameController.text.trim(),
-      _passwordController.text,
+    final success = await auth.signup(
+      username: _usernameController.text.trim(),
+      password: _passwordController.text,
     );
     if (success && mounted) {
-      // AuthGate reacts to the now-authenticated status and swaps to the
-      // rides list; just pop back to it (removing this pushed login route).
+      // AuthGate reacts to the authenticated status; pop back to it.
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
@@ -42,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(backgroundColor: Colors.transparent),
       extendBodyBehindAppBar: true,
@@ -59,28 +60,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
+                        color: theme.colorScheme.primaryContainer,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        Icons.directions_bike,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        Icons.person_add_alt_1,
+                        size: 44,
+                        color: theme.colorScheme.onPrimaryContainer,
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Cylan',
+                      'Create your account',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Welcome back — log in to see your rides',
+                      'Just pick a username and password to get started',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -91,8 +93,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         prefixIcon: Icon(Icons.person_outline),
                       ),
                       textInputAction: TextInputAction.next,
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'Enter your username'
+                      autofillHints: const [AutofillHints.newUsername],
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? 'Choose a username'
                           : null,
                     ),
                     const SizedBox(height: 16),
@@ -114,18 +117,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       obscureText: _obscurePassword,
                       textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.newPassword],
                       onFieldSubmitted: (_) => _submit(),
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'Enter your password'
+                      validator: (v) => (v == null || v.length < 8)
+                          ? 'Use at least 8 characters'
                           : null,
                     ),
                     if (auth.error != null) ...[
                       const SizedBox(height: 16),
                       Text(
                         auth.error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                        style: TextStyle(color: theme.colorScheme.error),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -138,17 +140,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Log in'),
+                          : const Text('Create account'),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: auth.isBusy
                           ? null
-                          : () => Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                    builder: (_) => const SignupScreen()),
-                              ),
-                      child: const Text("New here? Create an account"),
+                          : () => Navigator.of(context).pop(),
+                      child: const Text('I already have an account'),
                     ),
                   ],
                 ),

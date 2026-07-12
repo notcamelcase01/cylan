@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/app_background.dart';
 import 'login_screen.dart';
+import 'signup_screen.dart';
 
 /// The unauthenticated welcome screen — a branded hero with a quick tour of
 /// what Cylan does, leading into the login form.
@@ -96,9 +97,17 @@ class LandingScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                     FilledButton(
                       onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const SignupScreen()),
                       ),
                       child: const Text('Get started'),
+                    ),
+                    const SizedBox(height: 4),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      ),
+                      child: const Text('I already have an account'),
                     ),
                     const SizedBox(height: 8),
                     Text(

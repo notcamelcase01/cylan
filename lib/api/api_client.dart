@@ -72,6 +72,31 @@ class ApiClient {
     return t;
   }
 
+  /// Creates an account and stores the returned token. `name`/`email` are
+  /// optional and can be filled in later via [updateProfile].
+  Future<AppUser> signup({
+    required String username,
+    required String password,
+    String? name,
+    String? email,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/signup/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (email != null && email.isNotEmpty) 'email': email,
+      }),
+    );
+    if (response.statusCode != 201) _throwForResponse(response, response.body);
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    _token = decoded['token'] as String;
+    await _storage.write(key: _tokenKey, value: _token!);
+    return AppUser.fromJson(decoded);
+  }
+
   Future<void> logout() async {
     _token = null;
     await _storage.delete(key: _tokenKey);
@@ -81,6 +106,20 @@ class ApiClient {
     final response = await http.get(
       Uri.parse('$baseUrl/auth/me/'),
       headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  /// Updates the rider's optional profile fields (name / email).
+  Future<AppUser> updateProfile({String? name, String? email}) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/auth/me/'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'name': ?name,
+        'email': ?email,
+      }),
     );
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);

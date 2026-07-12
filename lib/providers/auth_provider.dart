@@ -50,6 +50,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> signup({
+    required String username,
+    required String password,
+    String? name,
+    String? email,
+  }) async {
+    isBusy = true;
+    error = null;
+    notifyListeners();
+    try {
+      currentUser = await _api.signup(
+        username: username,
+        password: password,
+        name: name,
+        email: email,
+      );
+      status = AuthStatus.authenticated;
+      return true;
+    } on ApiException catch (e) {
+      error = e.message;
+      return false;
+    } finally {
+      isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Updates the rider's optional profile (name / email). Returns the error
+  /// message on failure, or `null` on success.
+  Future<String?> updateProfile({String? name, String? email}) async {
+    try {
+      currentUser = await _api.updateProfile(name: name, email: email);
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
   Future<void> logout() async {
     await _api.logout();
     currentUser = null;
