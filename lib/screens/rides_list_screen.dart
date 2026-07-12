@@ -10,6 +10,7 @@ import '../providers/theme_provider.dart';
 import '../providers/weather_cache_provider.dart';
 import 'auth_gate.dart';
 import 'ride_detail_screen.dart';
+import 'strava_import_screen.dart';
 
 class RidesListScreen extends StatelessWidget {
   const RidesListScreen({super.key});
@@ -49,6 +50,48 @@ class _RidesListViewState extends State<_RidesListView> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showImportOptions() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.upload_file),
+              title: const Text('Upload a file'),
+              subtitle: const Text('GPX, FIT or KML from your device'),
+              onTap: () => Navigator.pop(context, 'file'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.link, color: Color(0xFFFC4C02)),
+              title: const Text('Import from Strava'),
+              subtitle: const Text('Bring in your saved Strava routes'),
+              onTap: () => Navigator.pop(context, 'strava'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'file') {
+      _pickAndUpload();
+    } else if (choice == 'strava') {
+      _importFromStrava();
+    }
+  }
+
+  Future<void> _importFromStrava() async {
+    final imported = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const StravaImportScreen()),
+    );
+    if (imported == true && mounted) {
+      context.read<RidesProvider>().refresh();
+    }
   }
 
   Future<void> _pickAndUpload() async {
@@ -149,14 +192,15 @@ class _RidesListViewState extends State<_RidesListView> {
         ],
       ),
       body: _buildBody(context, ridesProvider, weatherCache),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _uploading ? null : _pickAndUpload,
-        tooltip: 'Upload GPX/FIT/KML',
-        child: _uploading
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _uploading ? null : _showImportOptions,
+        tooltip: 'Add a ride',
+        icon: _uploading
             ? const SizedBox(
                 height: 20, width: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.add),
+        label: const Text('Add ride'),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/ride.dart';
+import '../models/strava_route.dart';
 import '../models/user.dart';
 import '../models/weather_point.dart';
 import 'api_exception.dart';
@@ -19,7 +20,8 @@ class ApiClient {
 
   String? _token;
 
-  Future<String?> get token async => _token ??= await _storage.read(key: _tokenKey);
+  Future<String?> get token async =>
+      _token ??= await _storage.read(key: _tokenKey);
 
   Future<bool> get isLoggedIn async => (await token) != null;
 
@@ -63,7 +65,8 @@ class ApiClient {
     if (response.statusCode != 200) {
       _throwForResponse(response, response.body);
     }
-    final t = (jsonDecode(response.body) as Map<String, dynamic>)['token'] as String;
+    final t =
+        (jsonDecode(response.body) as Map<String, dynamic>)['token'] as String;
     _token = t;
     await _storage.write(key: _tokenKey, value: t);
     return t;
@@ -137,13 +140,90 @@ class ApiClient {
     required DateTime finish,
   }) async {
     String iso(DateTime dt) => dt.toIso8601String().split('.').first;
-    final uri = Uri.parse('$baseUrl/rides/$id/weather/').replace(
-      queryParameters: {'start': iso(start), 'finish': iso(finish)},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/rides/$id/weather/',
+    ).replace(queryParameters: {'start': iso(start), 'finish': iso(finish)});
     final response = await http.get(uri, headers: await _headers());
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  // --- Strava ----------------------------------------------------------------
+
+  /// Returns the browser consent URL to open. Its signed `state` carries the
+  /// user id so the web callback can link Strava without a web session.
+  Future<String> stravaAuthorizeUrl() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/strava/authorize/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return (jsonDecode(response.body) as Map<String, dynamic>)['authorize_url']
+        as String;
+  }
+
+  Future<bool> stravaConnected() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/strava/status/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return (jsonDecode(response.body) as Map<String, dynamic>)['connected']
+        as bool;
+  }
+
+  Future<List<StravaRoute>> stravaRoutes() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/strava/routes/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return (jsonDecode(response.body) as List<dynamic>)
+        .map((e) => StravaRoute.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Imports the chosen routes. Returns the imported [Ride]s; per-route
+  /// failures are reported in [StravaImportResult.failures].
+  Future<StravaImportResult> stravaImport(
+    List<StravaRoute> routes, {
+    bool disconnect = true,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/strava/import/'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'routes': [
+          for (final r in routes) {'id': r.id, 'name': r.name},
+        ],
+        'disconnect': disconnect,
+      }),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return StravaImportResult(
+      imported: (decoded['imported'] as List<dynamic>)
+          .map((e) => Ride.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      failures: (decoded['failed'] as List<dynamic>)
+          .map((e) => (e as Map<String, dynamic>)['error'].toString())
+          .toList(),
+    );
+  }
+
+  Future<void> stravaDisconnect() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/strava/disconnect/'),
+      headers: await _headers(),
+    );
+    if (response.statusCode != 204) _throwForResponse(response, response.body);
+  }
+}
+
+class StravaImportResult {
+  final List<Ride> imported;
+  final List<String> failures;
+  const StravaImportResult({required this.imported, required this.failures});
 }

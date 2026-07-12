@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
-import 'login_screen.dart';
+import 'landing_screen.dart';
 import 'rides_list_screen.dart';
 
 class AuthGate extends StatefulWidget {
@@ -32,7 +32,7 @@ class _AuthGateState extends State<AuthGate> {
       case AuthStatus.authenticated:
         return const RidesListScreen();
       case AuthStatus.unauthenticated:
-        return const LoginScreen();
+        return const LandingScreen();
     }
   }
 }
