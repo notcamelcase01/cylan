@@ -105,6 +105,35 @@ class _RideDetailViewState extends State<_RideDetailView> {
 
     final theme = Theme.of(context);
 
+    final map = profile == null
+        ? null
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              height: 240,
+              child: RouteMap(
+                profile: profile,
+                weatherPoints: weatherPoints,
+                highlightLocation: _highlightIndex == null
+                    ? null
+                    : LatLng(
+                        profile.latitude[_highlightIndex!],
+                        profile.longitude[_highlightIndex!],
+                      ),
+              ),
+            ),
+          );
+    final chart = !hasTrack
+        ? null
+        : SizedBox(
+            height: 150,
+            child: ElevationChart(
+              profile: profile,
+              mode: _chartMode,
+              onIndexSelected: (i) => setState(() => _highlightIndex = i),
+            ),
+          );
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -128,37 +157,38 @@ class _RideDetailViewState extends State<_RideDetailView> {
                               color: theme.colorScheme.onSurfaceVariant)),
                     ),
                   const SizedBox(height: 14),
-                  if (profile != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: SizedBox(
-                        height: 240,
-                        child: RouteMap(
-                          profile: profile,
-                          weatherPoints: weatherPoints,
-                          highlightLocation: _highlightIndex == null
-                              ? null
-                              : LatLng(
-                                  profile.latitude[_highlightIndex!],
-                                  profile.longitude[_highlightIndex!],
-                                ),
+                  LayoutBuilder(builder: (context, constraints) {
+                    // Wide layouts (tablets, unfolded foldables, phones in
+                    // landscape) put the map and stats side by side instead
+                    // of stacking, so the map isn't squeezed narrow while
+                    // space next to it goes unused. Keyed on available
+                    // width rather than orientation so it also covers wide
+                    // portrait screens (e.g. an iPad).
+                    final wide = constraints.maxWidth >= 700;
+                    if (!wide || map == null) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (map != null) ...[map, const SizedBox(height: 16)],
+                          _StatsRow(ride: ride),
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 3, child: map),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 2,
+                          child: _StatsRow(ride: ride, vertical: true),
                         ),
-                      ),
-                    ),
+                      ],
+                    );
+                  }),
+                  if (chart != null) ...[
                     const SizedBox(height: 16),
-                  ],
-                  _StatsRow(ride: ride),
-                  if (hasTrack) ...[
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      height: 150,
-                      child: ElevationChart(
-                        profile: profile,
-                        mode: _chartMode,
-                        onIndexSelected: (i) =>
-                            setState(() => _highlightIndex = i),
-                      ),
-                    ),
+                    chart,
                   ],
                   const SizedBox(height: 10),
                   Align(
@@ -292,7 +322,13 @@ class _SmoothingControl extends StatelessWidget {
 
 class _StatsRow extends StatelessWidget {
   final Ride ride;
-  const _StatsRow({required this.ride});
+
+  /// Stacks the stats in a single column instead of laying them out
+  /// side-by-side — used in the wide layout's right-hand column, where
+  /// there isn't room for four items abreast.
+  final bool vertical;
+
+  const _StatsRow({required this.ride, this.vertical = false});
 
   @override
   Widget build(BuildContext context) {
@@ -304,29 +340,56 @@ class _StatsRow extends StatelessWidget {
       (Icons.terrain, 'Max grade', '${ride.maxGradientPct.toStringAsFixed(1)}%'),
     ];
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: 12, horizontal: vertical ? 12 : 0),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (final (icon, label, value) in stats)
-            Column(
+      child: vertical
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(height: 4),
-                Text(value,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                Text(label,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant)),
+                for (final (icon, label, value) in stats)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(icon, size: 18, color: theme.colorScheme.primary),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(value,
+                                style: theme.textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
+                            Text(label,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (final (icon, label, value) in stats)
+                  Column(
+                    children: [
+                      Icon(icon, size: 18, color: theme.colorScheme.primary),
+                      const SizedBox(height: 4),
+                      Text(value,
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(label,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
               ],
             ),
-        ],
-      ),
     );
   }
 }
