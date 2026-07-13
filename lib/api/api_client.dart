@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -14,6 +16,12 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
 
   static const String baseUrl = 'https://cyclingngin.duckdns.org/api';
+
+  // Ordinary requests should never hang indefinitely on a bad connection
+  // (captive portal, dead wifi); uploads get longer since a 10 MB file can
+  // take a while on a slow link.
+  static const _requestTimeout = Duration(seconds: 20);
+  static const _uploadTimeout = Duration(seconds: 90);
 
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'auth_token';
@@ -31,6 +39,51 @@ class ApiClient {
       if (json) 'Content-Type': 'application/json',
       if (t != null) 'Authorization': 'Token $t',
     };
+  }
+
+  /// Runs an HTTP call, applies a timeout, and converts any transport-level
+  /// failure (no connection, DNS failure, dropped socket, timeout) into an
+  /// [ApiException]. Without this, those errors aren't [ApiException] and
+  /// slip past every `on ApiException catch` in the app, leaving a screen
+  /// stuck with a stopped spinner and no message shown.
+  Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    Duration timeout = _requestTimeout,
+  }) async {
+    try {
+      return await request().timeout(timeout);
+    } on TimeoutException {
+      throw ApiException('The request timed out. Check your connection and try again.');
+    } on SocketException {
+      throw ApiException('Could not reach the server. Check your connection and try again.');
+    } on http.ClientException {
+      throw ApiException('Could not reach the server. Check your connection and try again.');
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('Something went wrong. Please try again.');
+    }
+  }
+
+  /// Same as [_send] but for a [http.MultipartRequest] (file upload), which
+  /// returns a [http.StreamedResponse] instead of a plain [http.Response].
+  Future<http.StreamedResponse> _sendMultipart(
+    http.MultipartRequest request, {
+    Duration timeout = _uploadTimeout,
+  }) async {
+    try {
+      return await request.send().timeout(timeout);
+    } on TimeoutException {
+      throw ApiException('The upload timed out. Check your connection and try again.');
+    } on SocketException {
+      throw ApiException('Could not reach the server. Check your connection and try again.');
+    } on http.ClientException {
+      throw ApiException('Could not reach the server. Check your connection and try again.');
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('Something went wrong. Please try again.');
+    }
   }
 
   Never _throwForResponse(http.BaseResponse response, String body) {
@@ -57,11 +110,11 @@ class ApiClient {
   }
 
   Future<String> login(String username, String password) async {
-    final response = await http.post(
+    final response = await _send(() => http.post(
       Uri.parse('$baseUrl/auth/token/'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
-    );
+    ));
     if (response.statusCode != 200) {
       _throwForResponse(response, response.body);
     }
@@ -80,7 +133,7 @@ class ApiClient {
     String? name,
     String? email,
   }) async {
-    final response = await http.post(
+    final response = await _send(() => http.post(
       Uri.parse('$baseUrl/auth/signup/'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -89,7 +142,7 @@ class ApiClient {
         if (name != null && name.isNotEmpty) 'name': name,
         if (email != null && email.isNotEmpty) 'email': email,
       }),
-    );
+    ));
     if (response.statusCode != 201) _throwForResponse(response, response.body);
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     _token = decoded['token'] as String;
@@ -103,40 +156,40 @@ class ApiClient {
   }
 
   Future<AppUser> me() async {
-    final response = await http.get(
+    final response = await _send(() async => http.get(
       Uri.parse('$baseUrl/auth/me/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   /// Updates the rider's optional profile fields (name / email).
   Future<AppUser> updateProfile({String? name, String? email}) async {
-    final response = await http.patch(
+    final response = await _send(() async => http.patch(
       Uri.parse('$baseUrl/auth/me/'),
       headers: await _headers(),
       body: jsonEncode({
         'name': ?name,
         'email': ?email,
       }),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<RidePage> listRides({String? pageUrl}) async {
     final uri = Uri.parse(pageUrl ?? '$baseUrl/rides/');
-    final response = await http.get(uri, headers: await _headers());
+    final response = await _send(() async => http.get(uri, headers: await _headers()));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return RidePage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<Ride> getRide(int id) async {
-    final response = await http.get(
+    final response = await _send(() async => http.get(
       Uri.parse('$baseUrl/rides/$id/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
@@ -149,18 +202,18 @@ class ApiClient {
     if (name != null && name.isNotEmpty) request.fields['name'] = name;
     request.files.add(await http.MultipartFile.fromPath('file', filePath));
 
-    final streamed = await request.send();
+    final streamed = await _sendMultipart(request);
     final body = await streamed.stream.bytesToString();
     if (streamed.statusCode != 201) _throwForResponse(streamed, body);
     return Ride.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
   Future<Ride> renameRide(int id, String name) async {
-    final response = await http.patch(
+    final response = await _send(() async => http.patch(
       Uri.parse('$baseUrl/rides/$id/'),
       headers: await _headers(),
       body: jsonEncode({'name': name}),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
@@ -169,20 +222,20 @@ class ApiClient {
   /// window (50-500 m): wider flattens more GPS noise, narrower preserves
   /// more detail (and more noise).
   Future<Ride> setSmoothing(int id, int windowM) async {
-    final response = await http.post(
+    final response = await _send(() async => http.post(
       Uri.parse('$baseUrl/rides/$id/smoothing/'),
       headers: await _headers(),
       body: jsonEncode({'window_m': windowM}),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<void> deleteRide(int id) async {
-    final response = await http.delete(
+    final response = await _send(() async => http.delete(
       Uri.parse('$baseUrl/rides/$id/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 204) _throwForResponse(response, response.body);
   }
 
@@ -195,7 +248,7 @@ class ApiClient {
     final uri = Uri.parse(
       '$baseUrl/rides/$id/weather/',
     ).replace(queryParameters: {'start': iso(start), 'finish': iso(finish)});
-    final response = await http.get(uri, headers: await _headers());
+    final response = await _send(() async => http.get(uri, headers: await _headers()));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
@@ -207,30 +260,30 @@ class ApiClient {
   /// Returns the browser consent URL to open. Its signed `state` carries the
   /// user id so the web callback can link Strava without a web session.
   Future<String> stravaAuthorizeUrl() async {
-    final response = await http.post(
+    final response = await _send(() async => http.post(
       Uri.parse('$baseUrl/strava/authorize/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as Map<String, dynamic>)['authorize_url']
         as String;
   }
 
   Future<bool> stravaConnected() async {
-    final response = await http.get(
+    final response = await _send(() async => http.get(
       Uri.parse('$baseUrl/strava/status/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as Map<String, dynamic>)['connected']
         as bool;
   }
 
   Future<List<StravaRoute>> stravaRoutes() async {
-    final response = await http.get(
+    final response = await _send(() async => http.get(
       Uri.parse('$baseUrl/strava/routes/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((e) => StravaRoute.fromJson(e as Map<String, dynamic>))
@@ -243,15 +296,20 @@ class ApiClient {
     List<StravaRoute> routes, {
     bool disconnect = true,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/strava/import/'),
-      headers: await _headers(),
-      body: jsonEncode({
-        'routes': [
-          for (final r in routes) {'id': r.id, 'name': r.name},
-        ],
-        'disconnect': disconnect,
-      }),
+    final response = await _send(
+      () async => http.post(
+        Uri.parse('$baseUrl/strava/import/'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'routes': [
+            for (final r in routes) {'id': r.id, 'name': r.name},
+          ],
+          'disconnect': disconnect,
+        }),
+      ),
+      // A batch import can take longer than a plain request if several
+      // routes are fetched from Strava and re-parsed server-side.
+      timeout: _uploadTimeout,
     );
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -266,10 +324,10 @@ class ApiClient {
   }
 
   Future<void> stravaDisconnect() async {
-    final response = await http.post(
+    final response = await _send(() async => http.post(
       Uri.parse('$baseUrl/strava/disconnect/'),
       headers: await _headers(),
-    );
+    ));
     if (response.statusCode != 204) _throwForResponse(response, response.body);
   }
 }

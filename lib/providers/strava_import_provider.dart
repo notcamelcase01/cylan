@@ -39,6 +39,10 @@ class StravaImportProvider extends ChangeNotifier {
   List<Ride> imported = [];
   List<String> failures = [];
 
+  /// Whether the Strava link has already been dropped (via a successful
+  /// import, which disconnects by default, or an explicit cancel).
+  bool _disconnected = false;
+
   StravaImportProvider() {
     refreshStatus();
   }
@@ -103,10 +107,20 @@ class StravaImportProvider extends ChangeNotifier {
 
   Future<void> _loadRoutes() async {
     routes = await _api.stravaRoutes();
-    selectedIds
-      ..clear()
-      ..addAll(routes.map((r) => r.id));
+    selectedIds.clear();
     step = StravaStep.routes;
+  }
+
+  /// Ends the Strava connection without importing anything, freeing the
+  /// athlete slot for other users.
+  Future<void> cancelImport() async {
+    try {
+      await _api.stravaDisconnect();
+      _disconnected = true;
+    } on ApiException catch (e) {
+      error = e.message;
+      notifyListeners();
+    }
   }
 
   Future<void> importSelected() async {
@@ -120,10 +134,27 @@ class StravaImportProvider extends ChangeNotifier {
       imported = result.imported;
       failures = result.failures;
       step = StravaStep.done;
+      _disconnected = true; // the import call disconnects by default
     } on ApiException catch (e) {
       error = e.message;
       step = StravaStep.routes;
     }
     notifyListeners();
+  }
+
+  /// Best-effort cleanup for when the user leaves the flow without
+  /// finishing it — back button, swipe-back, or closing the screen — so a
+  /// route was never picked and the athlete slot is left occupied. Safe to
+  /// call even when there's no active link; the backend delete is a no-op.
+  Future<void> disconnectOnExit() async {
+    if (_disconnected) return;
+    if (step == StravaStep.checking || step == StravaStep.connect) return;
+    if (step == StravaStep.importing) return;
+    _disconnected = true;
+    try {
+      await _api.stravaDisconnect();
+    } catch (_) {
+      // The screen is already gone; nothing more we can do here.
+    }
   }
 }

@@ -27,6 +27,8 @@ class _StravaImportView extends StatefulWidget {
 
 class _StravaImportViewState extends State<_StravaImportView>
     with WidgetsBindingObserver {
+  StravaImportProvider? _provider;
+
   @override
   void initState() {
     super.initState();
@@ -34,8 +36,17 @@ class _StravaImportViewState extends State<_StravaImportView>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _provider ??= context.read<StravaImportProvider>();
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Covers the back button, swipe-back, and any other way this screen can
+    // be popped without going through the explicit Cancel/Done buttons.
+    _provider?.disconnectOnExit();
     super.dispose();
   }
 
@@ -188,12 +199,25 @@ class _RoutePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final importing = provider.step == StravaStep.importing;
     if (provider.routes.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(28),
-          child: Text(
-            'No saved routes found on your Strava account.',
-            textAlign: TextAlign.center,
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'No saved routes found on your Strava account.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => _cancelImport(context),
+                  child: const Text('Cancel import'),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -244,28 +268,46 @@ class _RoutePicker extends StatelessWidget {
           top: false,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: importing || !provider.isSelected
-                    ? null
-                    : provider.importSelected,
-                child: importing
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        'Import ${provider.selectedIds.length} '
-                        'route${provider.selectedIds.length == 1 ? '' : 's'}',
-                      ),
-              ),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: importing || !provider.isSelected
+                        ? null
+                        : provider.importSelected,
+                    child: importing
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            'Import ${provider.selectedIds.length} '
+                            'route${provider.selectedIds.length == 1 ? '' : 's'}',
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed:
+                        importing ? null : () => _cancelImport(context),
+                    child: const Text('Cancel import'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _cancelImport(BuildContext context) async {
+    await provider.cancelImport();
+    if (context.mounted) Navigator.of(context).pop(false);
   }
 
   String _subtitle(StravaRoute r) {

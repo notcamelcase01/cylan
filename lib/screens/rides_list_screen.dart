@@ -168,6 +168,23 @@ class _RidesListViewState extends State<_RidesListView> {
       appBar: AppBar(
         title: const Text('My Rides'),
         actions: [
+          PopupMenuButton<RideSort>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort rides',
+            initialValue: ridesProvider.sort,
+            onSelected: (value) =>
+                context.read<RidesProvider>().setSort(value),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: RideSort.newest, child: Text('Newest first')),
+              PopupMenuItem(value: RideSort.nameAsc, child: Text('Name (A–Z)')),
+              PopupMenuItem(
+                  value: RideSort.distanceAsc,
+                  child: Text('Distance (shortest first)')),
+              PopupMenuItem(
+                  value: RideSort.distanceDesc,
+                  child: Text('Distance (longest first)')),
+            ],
+          ),
           Consumer<ThemeProvider>(
             builder: (context, theme, _) => IconButton(
               icon: Icon(theme.icon),
