@@ -7,6 +7,11 @@ import '../models/ride.dart';
 import '../providers/live_tracking_provider.dart';
 import '../widgets/route_map.dart';
 
+/// Below this speed, GPS heading is too noisy to be worth showing (it can
+/// swing wildly while stopped or barely moving), so the live marker falls
+/// back to a plain dot. ~1.8 km/h — comfortably below walking pace.
+const double _headingSpeedThresholdMps = 0.5;
+
 class LiveTrackingScreen extends StatelessWidget {
   final Ride ride;
 
@@ -89,15 +94,22 @@ class _LiveTrackingView extends StatelessWidget {
     }
 
     final profile = provider.ride.profile!;
-    final liveLocation = provider.position == null
-        ? null
-        : LatLng(provider.position!.latitude, provider.position!.longitude);
+    final pos = provider.position;
+    final liveLocation =
+        pos == null ? null : LatLng(pos.latitude, pos.longitude);
+    // GPS heading is noise below walking speed, so only show the arrow once
+    // actually moving; otherwise the marker falls back to a plain dot.
+    final liveHeading =
+        pos != null && pos.speed > _headingSpeedThresholdMps
+            ? pos.heading
+            : null;
     return Column(
       children: [
         Expanded(
           child: RouteMap(
             profile: profile,
             liveLocation: liveLocation,
+            liveHeading: liveHeading,
             showBasemap: showBasemap,
           ),
         ),

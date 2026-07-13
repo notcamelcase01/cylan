@@ -115,6 +115,11 @@ List<LatLng> _placeWeatherBubbles(
 class RouteMap extends StatefulWidget {
   final RideProfile profile;
   final LatLng? liveLocation;
+
+  /// Course over ground in degrees from north, for the live-location arrow.
+  /// GPS heading is noisy/meaningless while stationary, so callers should pass
+  /// null when not moving — the marker then falls back to a plain dot.
+  final double? liveHeading;
   final List<WeatherPoint> weatherPoints;
 
   /// Marks the point matching the index under the user's finger on the
@@ -136,6 +141,7 @@ class RouteMap extends StatefulWidget {
     super.key,
     required this.profile,
     this.liveLocation,
+    this.liveHeading,
     this.weatherPoints = const [],
     this.highlightLocation,
     this.interactive = true,
@@ -245,7 +251,15 @@ class _RouteMapState extends State<RouteMap> {
             if (widget.liveLocation != null)
               Marker(
                 point: widget.liveLocation!,
-                child: const Icon(Icons.my_location, color: Colors.blue),
+                child: widget.liveHeading == null
+                    ? const Icon(Icons.my_location, color: Colors.blue)
+                    : Transform.rotate(
+                        // navigation icon points up (north) at angle 0, so
+                        // rotate directly by the heading (degrees -> radians).
+                        angle: widget.liveHeading! * math.pi / 180,
+                        child: const Icon(Icons.navigation,
+                            color: Colors.blue, size: 30),
+                      ),
               ),
             if (widget.highlightLocation != null)
               Marker(
