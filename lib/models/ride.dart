@@ -68,6 +68,27 @@ class Ride {
       smoothingWindowM: numOrNull(json['smoothing_window_m']) ?? 30.0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'source_format': sourceFormat,
+        'recorded_at': recordedAt?.toIso8601String(),
+        'created_at': createdAt.toIso8601String(),
+        'distance_km': distanceKm,
+        'distance_m': distanceM,
+        'total_ascent_m': totalAscentM,
+        'total_descent_m': totalDescentM,
+        'min_elevation_m': minElevationM,
+        'max_elevation_m': maxElevationM,
+        'net_elevation_m': netElevationM,
+        'max_gradient_pct': maxGradientPct,
+        'min_gradient_pct': minGradientPct,
+        'point_count': pointCount,
+        'original_filename': originalFilename,
+        'profile': profile?.toJson(),
+        'smoothing_window_m': smoothingWindowM,
+      };
 }
 
 class RidePage {

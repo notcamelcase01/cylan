@@ -7,6 +7,7 @@ import '../models/ride.dart';
 import '../providers/rides_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/weather_cache_provider.dart';
+import 'offline_rides_screen.dart';
 import 'profile_screen.dart';
 import 'ride_detail_screen.dart';
 import 'strava_import_screen.dart';
@@ -82,6 +83,12 @@ class _RidesListViewState extends State<_RidesListView> {
     } else if (choice == 'strava') {
       _importFromStrava();
     }
+  }
+
+  void _openOffline() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const OfflineRidesScreen()),
+    );
   }
 
   Future<void> _importFromStrava() async {
@@ -168,6 +175,11 @@ class _RidesListViewState extends State<_RidesListView> {
       appBar: AppBar(
         title: const Text('My Rides'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_for_offline_outlined),
+            tooltip: 'Offline rides',
+            onPressed: _openOffline,
+          ),
           PopupMenuButton<RideSort>(
             icon: const Icon(Icons.sort),
             tooltip: 'Sort rides',
@@ -230,6 +242,12 @@ class _RidesListViewState extends State<_RidesListView> {
             FilledButton(
               onPressed: provider.loadFirst,
               child: const Text('Retry'),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              icon: const Icon(Icons.download_for_offline_outlined),
+              label: const Text('View offline rides'),
+              onPressed: _openOffline,
             ),
           ],
         ),

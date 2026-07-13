@@ -25,4 +25,12 @@ class RideProfile {
       longitude: nums('longitude'),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'distance_km': distanceKm,
+        'elevation_m': elevationM,
+        'gradient_pct': gradientPct,
+        'latitude': latitude,
+        'longitude': longitude,
+      };
 }

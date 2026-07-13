@@ -10,19 +10,29 @@ import '../widgets/route_map.dart';
 class LiveTrackingScreen extends StatelessWidget {
   final Ride ride;
 
-  const LiveTrackingScreen({super.key, required this.ride});
+  /// When false, the live map is drawn without a tile basemap (route line only)
+  /// — used for offline rides, so live GPS tracking works with no connection.
+  final bool showBasemap;
+
+  const LiveTrackingScreen({
+    super.key,
+    required this.ride,
+    this.showBasemap = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => LiveTrackingProvider(ride)..start(),
-      child: const _LiveTrackingView(),
+      child: _LiveTrackingView(showBasemap: showBasemap),
     );
   }
 }
 
 class _LiveTrackingView extends StatelessWidget {
-  const _LiveTrackingView();
+  final bool showBasemap;
+
+  const _LiveTrackingView({this.showBasemap = true});
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +98,7 @@ class _LiveTrackingView extends StatelessWidget {
           child: RouteMap(
             profile: profile,
             liveLocation: liveLocation,
+            showBasemap: showBasemap,
           ),
         ),
         _InfoPanel(provider: provider),

@@ -125,6 +125,13 @@ class RouteMap extends StatefulWidget {
   /// When false, all gestures are disabled (used for the shareable snapshot).
   final bool interactive;
 
+  /// When false, the map is drawn without a tile basemap — just the route line,
+  /// markers and weather bubbles on a plain background. Used for offline rides,
+  /// where OSM map tiles aren't available (their usage policy disallows caching
+  /// them for offline use). The route is a vector line, so it still pans/zooms
+  /// freely; only the streets underneath are missing.
+  final bool showBasemap;
+
   const RouteMap({
     super.key,
     required this.profile,
@@ -132,6 +139,7 @@ class RouteMap extends StatefulWidget {
     this.weatherPoints = const [],
     this.highlightLocation,
     this.interactive = true,
+    this.showBasemap = true,
   });
 
   @override
@@ -200,6 +208,11 @@ class _RouteMapState extends State<RouteMap> {
         minZoom: _minZoom,
         maxZoom: _maxZoom,
         cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
+        // With no basemap (offline), give the route line a plain, theme-aware
+        // backdrop instead of the grey that would flash behind absent tiles.
+        backgroundColor: widget.showBasemap
+            ? const Color(0xFFE0E0E0)
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
         interactionOptions: InteractionOptions(
           flags: widget.interactive
               ? InteractiveFlag.all
@@ -207,12 +220,13 @@ class _RouteMapState extends State<RouteMap> {
         ),
       ),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.cylan',
-          minZoom: _minZoom,
-          maxZoom: _maxZoom,
-        ),
+        if (widget.showBasemap)
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.cylan',
+            minZoom: _minZoom,
+            maxZoom: _maxZoom,
+          ),
         PolylineLayer(
           polylines: [
             Polyline(points: points, strokeWidth: 4, color: routeColor),

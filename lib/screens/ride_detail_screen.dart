@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ride.dart';
+import '../providers/offline_rides_provider.dart';
 import '../providers/ride_detail_provider.dart';
 import '../providers/weather_cache_provider.dart';
 import '../services/share_image_service.dart';
@@ -21,13 +22,14 @@ class RideDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => RideDetailProvider()..load(rideId),
-      child: const _RideDetailView(),
+      child: _RideDetailView(rideId: rideId),
     );
   }
 }
 
 class _RideDetailView extends StatefulWidget {
-  const _RideDetailView();
+  final int rideId;
+  const _RideDetailView({required this.rideId});
 
   @override
   State<_RideDetailView> createState() => _RideDetailViewState();
@@ -39,6 +41,81 @@ class _RideDetailViewState extends State<_RideDetailView> {
   ProfileChartMode _chartMode = ProfileChartMode.elevation;
   int? _highlightIndex;
   double? _pendingSmoothingWindow;
+
+  @override
+  void initState() {
+    super.initState();
+    // Reflect whether this ride is already saved offline in the app-bar action.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<OfflineRidesProvider>().refreshSavedState(widget.rideId);
+      }
+    });
+  }
+
+  /// Explains the offline limitations, then downloads the route + weather +
+  /// map tiles for offline use, showing the result.
+  Future<void> _saveOffline(Ride ride) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save for offline?'),
+        content: const Text(
+          "You'll be able to open this route with no connection. A few things "
+          'to keep in mind:\n\n'
+          '•  The map shows your route as a line with no streets underneath — '
+          'map backgrounds need a connection.\n'
+          '•  Weather is saved as it is now and won\'t update offline.\n'
+          '•  Smoothing stays at the current setting.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final weather =
+        context.read<WeatherCacheProvider>().pointsFor(ride.id) ?? const [];
+    final message =
+        await context.read<OfflineRidesProvider>().save(ride, weather);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message ?? 'Saved for offline use'),
+    ));
+  }
+
+  Future<void> _removeOffline(Ride ride) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove offline copy?'),
+        content: Text('"${ride.name}" will no longer be available offline.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await context.read<OfflineRidesProvider>().delete(ride.id);
+    }
+  }
 
   Future<void> _applySmoothing(double windowM) async {
     setState(() => _pendingSmoothingWindow = windowM);
@@ -70,6 +147,7 @@ class _RideDetailViewState extends State<_RideDetailView> {
       appBar: AppBar(
         title: Text(ride?.name ?? 'Ride'),
         actions: [
+          if (ride != null) _OfflineAction(ride: ride, onSave: _saveOffline, onRemove: _removeOffline),
           if (ride != null)
             IconButton(
               icon: _sharing
@@ -267,6 +345,46 @@ class _RideDetailViewState extends State<_RideDetailView> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// App-bar action for saving the ride offline. Shows a download icon when not
+/// saved, a determinate spinner while tiles download, and a filled pin (tap to
+/// remove) once saved.
+class _OfflineAction extends StatelessWidget {
+  final Ride ride;
+  final Future<void> Function(Ride) onSave;
+  final Future<void> Function(Ride) onRemove;
+
+  const _OfflineAction({
+    required this.ride,
+    required this.onSave,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.watch<OfflineRidesProvider>();
+    if (offline.isSaving(ride.id)) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14),
+        child: Center(
+          child: SizedBox(
+            height: 22,
+            width: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    final saved = offline.isSaved(ride.id);
+    return IconButton(
+      icon: Icon(
+          saved ? Icons.offline_pin : Icons.download_for_offline_outlined),
+      color: saved ? Theme.of(context).colorScheme.primary : null,
+      tooltip: saved ? 'Saved offline' : 'Save offline',
+      onPressed: () => saved ? onRemove(ride) : onSave(ride),
     );
   }
 }

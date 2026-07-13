@@ -50,4 +50,21 @@ class WeatherPoint {
       icon: json['icon'] as String? ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'distance_km': distanceKm,
+        'eta': eta.toIso8601String(),
+        'latitude': latitude,
+        'longitude': longitude,
+        'matched_time': matchedTime.toIso8601String(),
+        'temperature_c': temperatureC,
+        'feels_like_c': feelsLikeC,
+        'precipitation_mm': precipitationMm,
+        'humidity_pct': humidityPct,
+        'wind_kmh': windKmh,
+        'wind_direction_deg': windDirectionDeg,
+        'wind_direction': windDirection,
+        'condition': condition,
+        'icon': icon,
+      };
 }
