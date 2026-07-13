@@ -91,7 +91,10 @@ class ApiClient {
     try {
       decoded = jsonDecode(body) as Map<String, dynamic>;
     } catch (_) {
-      throw ApiException('Unexpected server error (${response.statusCode}).');
+      throw ApiException(
+        'Unexpected server error (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
     }
     if (decoded.containsKey('detail')) {
       throw ApiException(decoded['detail'] as String);
@@ -106,6 +109,7 @@ class ApiClient {
     throw ApiException(
       message.isEmpty ? 'Request failed (${response.statusCode}).' : message,
       fieldErrors: fieldErrors,
+      statusCode: response.statusCode,
     );
   }
 

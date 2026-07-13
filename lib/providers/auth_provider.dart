@@ -16,6 +16,12 @@ class AuthProvider extends ChangeNotifier {
 
   /// Called once at app start: if a token is already stored, validate it
   /// against the server rather than trusting it blindly.
+  ///
+  /// A stored token is only cleared when the server actually rejects it
+  /// (401/403). Any other failure - no connection, timeout, a 5xx - means we
+  /// simply couldn't check, so the stored token is kept and the rider stays
+  /// logged in; otherwise going offline would sign them out with no way to
+  /// log back in until connectivity returns.
   Future<void> tryAutoLogin() async {
     if (!await _api.isLoggedIn) {
       status = AuthStatus.unauthenticated;
@@ -25,9 +31,15 @@ class AuthProvider extends ChangeNotifier {
     try {
       currentUser = await _api.me();
       status = AuthStatus.authenticated;
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        await _api.logout();
+        status = AuthStatus.unauthenticated;
+      } else {
+        status = AuthStatus.authenticated;
+      }
     } catch (_) {
-      await _api.logout();
-      status = AuthStatus.unauthenticated;
+      status = AuthStatus.authenticated;
     }
     notifyListeners();
   }
