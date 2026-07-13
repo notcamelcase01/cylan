@@ -38,38 +38,21 @@ const Duration _weatherBubbleGap = Duration(minutes: 30);
 /// Minimum ground distance between two shown weather bubbles, as a fraction of
 /// the ride's total distance. ETA spacing alone doesn't stop bubbles stacking
 /// where the route crosses itself (loops, out-and-backs): two points far apart
-/// in time can sit on nearly the same spot. Also requiring this geographic gap
-/// keeps those from overlapping, and scaling it to ride length keeps the
-/// spacing sensible on both short and long rides.
+/// in time can sit on nearly the same spot. When two bubbles fall within this
+/// gap, the later one is shifted back along the route by this same fraction of
+/// distance so it separates instead of stacking (see [_placeWeatherBubbles]).
 const double _weatherBubbleMinDistanceFraction = 0.02;
 
 const Distance _distance = Distance();
 
 /// Picks a readable subset of weather points spaced at least [_weatherBubbleGap]
-/// apart by ETA *and* [_weatherBubbleMinDistanceFraction] of the ride's total
-/// distance apart on the ground from every other kept point, always keeping the
-/// first and last so the whole route is represented.
+/// apart by ETA, always keeping the first and last so the whole route is
+/// represented.
 List<WeatherPoint> _thinWeather(List<WeatherPoint> points) {
   if (points.length <= 2) return points;
-  // Ride distance drives the geographic spacing threshold. Points aren't
-  // guaranteed sorted by distance, so take the max rather than the last.
-  final maxDistanceKm =
-      points.map((p) => p.distanceKm).reduce(math.max);
-  final minMeters = maxDistanceKm * 1000 * _weatherBubbleMinDistanceFraction;
   final kept = <WeatherPoint>[points.first];
-  bool clearsAllKept(WeatherPoint p) {
-    final at = LatLng(p.latitude, p.longitude);
-    for (final k in kept) {
-      if (_distance(at, LatLng(k.latitude, k.longitude)) < minMeters) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   for (final p in points.skip(1)) {
-    if (p.eta.difference(kept.last.eta) >= _weatherBubbleGap &&
-        clearsAllKept(p)) {
+    if (p.eta.difference(kept.last.eta) >= _weatherBubbleGap) {
       kept.add(p);
     }
   }
@@ -86,10 +69,52 @@ List<WeatherPoint> _thinWeather(List<WeatherPoint> points) {
   return kept;
 }
 
+/// The route coordinate at [km] along the ride, linearly interpolated from the
+/// profile's parallel distance/lat/lng samples. Used to move an overlapping
+/// weather bubble back along the route to a real point on the line.
+LatLng _routePointAtKm(RideProfile profile, double km) {
+  final d = profile.distanceKm;
+  if (d.isEmpty) return LatLng(profile.latitude.first, profile.longitude.first);
+  if (km <= d.first) {
+    return LatLng(profile.latitude.first, profile.longitude.first);
+  }
+  for (var i = 1; i < d.length; i++) {
+    if (d[i] >= km) {
+      final span = d[i] - d[i - 1];
+      final t = span <= 0 ? 0.0 : (km - d[i - 1]) / span;
+      return LatLng(
+        profile.latitude[i - 1] + (profile.latitude[i] - profile.latitude[i - 1]) * t,
+        profile.longitude[i - 1] + (profile.longitude[i] - profile.longitude[i - 1]) * t,
+      );
+    }
+  }
+  return LatLng(profile.latitude.last, profile.longitude.last);
+}
+
+/// The map position for each thinned weather bubble. A bubble whose native
+/// position lands within the min-distance gap of one already placed is shifted
+/// back along the route by [_weatherBubbleMinDistanceFraction] of total
+/// distance, so self-crossing routes don't stack bubbles on the same spot.
+List<LatLng> _placeWeatherBubbles(
+    RideProfile profile, List<WeatherPoint> bubbles) {
+  final maxDistanceKm =
+      bubbles.map((p) => p.distanceKm).fold<double>(0, math.max);
+  final minMeters = maxDistanceKm * 1000 * _weatherBubbleMinDistanceFraction;
+  final shiftKm = maxDistanceKm * _weatherBubbleMinDistanceFraction;
+  final placed = <LatLng>[];
+  for (final wp in bubbles) {
+    var pos = LatLng(wp.latitude, wp.longitude);
+    if (placed.any((q) => _distance(pos, q) < minMeters)) {
+      pos = _routePointAtKm(profile, wp.distanceKm - shiftKm);
+    }
+    placed.add(pos);
+  }
+  return placed;
+}
+
 class RouteMap extends StatefulWidget {
   final RideProfile profile;
   final LatLng? liveLocation;
-  final LatLng? nextTurn;
   final List<WeatherPoint> weatherPoints;
 
   /// Marks the point matching the index under the user's finger on the
@@ -104,7 +129,6 @@ class RouteMap extends StatefulWidget {
     super.key,
     required this.profile,
     this.liveLocation,
-    this.nextTurn,
     this.weatherPoints = const [],
     this.highlightLocation,
     this.interactive = true,
@@ -161,6 +185,10 @@ class _RouteMapState extends State<RouteMap> {
     final bounds = LatLngBounds.fromPoints(points);
     final routeColor = Theme.of(context).colorScheme.primary;
     final weatherPoints = _thinWeather(widget.weatherPoints);
+    final weatherBubblePositions =
+        _placeWeatherBubbles(profile, weatherPoints);
+    final maxWeatherDistanceKm =
+        weatherPoints.map((p) => p.distanceKm).fold<double>(0, math.max);
 
     return FlutterMap(
       mapController: _mapController,
@@ -200,15 +228,6 @@ class _RouteMapState extends State<RouteMap> {
               point: points.last,
               child: const Icon(Icons.flag_circle, color: Colors.red),
             ),
-            if (widget.nextTurn != null)
-              Marker(
-                point: widget.nextTurn!,
-                child: const Icon(
-                  Icons.turn_right,
-                  color: Colors.orange,
-                  size: 32,
-                ),
-              ),
             if (widget.liveLocation != null)
               Marker(
                 point: widget.liveLocation!,
@@ -238,16 +257,20 @@ class _RouteMapState extends State<RouteMap> {
         if (weatherPoints.isNotEmpty)
           MarkerLayer(
             markers: [
-              for (final wp in weatherPoints)
+              for (var i = 0; i < weatherPoints.length; i++)
                 Marker(
-                  point: LatLng(wp.latitude, wp.longitude),
+                  point: weatherBubblePositions[i],
                   width: 40,
                   height: 20,
                   // Scales the natural-size bubble down to fit the marker box
                   // so it can never overflow, whatever the font sizes / text.
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: _WeatherBubble(point: wp),
+                    child: _WeatherBubble(
+                      point: weatherPoints[i],
+                      secondHalf: weatherPoints[i].distanceKm >=
+                          maxWeatherDistanceKm / 2,
+                    ),
                   ),
                 ),
             ],
@@ -262,17 +285,33 @@ class _RouteMapState extends State<RouteMap> {
 /// rotated a further 180° to point where it's blowing TOWARD (matches map.js).
 class _WeatherBubble extends StatelessWidget {
   final WeatherPoint point;
-  const _WeatherBubble({required this.point});
+
+  /// Whether this bubble falls in the second half of the ride distance. Those
+  /// get an accent background (red on dark, grey on light) to distinguish the
+  /// back half of the route from the front.
+  final bool secondHalf;
+  const _WeatherBubble({required this.point, this.secondHalf = false});
 
   @override
   Widget build(BuildContext context) {
     final temp = point.temperatureC == null
         ? '–'
         : '${point.temperatureC!.round()}°';
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+    final Color background;
+    final Color foreground;
+    if (secondHalf) {
+      background = isDark ? const Color(0xFFC62828) : const Color(0xFFBDBDBD);
+      foreground = isDark ? Colors.white : Colors.black87;
+    } else {
+      background = scheme.surface;
+      foreground = scheme.onSurface;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: background,
         borderRadius: BorderRadius.circular(6),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 2),
@@ -285,13 +324,14 @@ class _WeatherBubble extends StatelessWidget {
           const SizedBox(width: 1),
           Text(
             temp,
-            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                fontSize: 8, fontWeight: FontWeight.w600, color: foreground),
           ),
           if (point.windDirectionDeg != null) ...[
             const SizedBox(width: 1),
             Transform.rotate(
               angle: (point.windDirectionDeg! + 180) % 360 * math.pi / 180,
-              child: const Text('↑', style: TextStyle(fontSize: 8)),
+              child: Text('↑', style: TextStyle(fontSize: 8, color: foreground)),
             ),
           ],
         ],

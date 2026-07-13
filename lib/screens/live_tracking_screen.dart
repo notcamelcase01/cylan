@@ -4,7 +4,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ride.dart';
-import '../models/turn.dart';
 import '../providers/live_tracking_provider.dart';
 import '../widgets/route_map.dart';
 
@@ -20,22 +19,6 @@ class LiveTrackingScreen extends StatelessWidget {
       child: const _LiveTrackingView(),
     );
   }
-}
-
-IconData _turnIcon(Turn turn) {
-  switch (turn.direction) {
-    case 'left':
-      return Icons.turn_left;
-    case 'right':
-      return Icons.turn_right;
-    default:
-      return Icons.navigation;
-  }
-}
-
-String _formatDistance(double km) {
-  final m = km * 1000;
-  return m < 950 ? '${(m / 10).round() * 10} m' : '${km.toStringAsFixed(1)} km';
 }
 
 class _LiveTrackingView extends StatelessWidget {
@@ -99,17 +82,12 @@ class _LiveTrackingView extends StatelessWidget {
     final liveLocation = provider.position == null
         ? null
         : LatLng(provider.position!.latitude, provider.position!.longitude);
-    final nextTurnLocation = provider.nextTurn == null
-        ? null
-        : provider.locationForTurn(provider.nextTurn!);
-
     return Column(
       children: [
         Expanded(
           child: RouteMap(
             profile: profile,
             liveLocation: liveLocation,
-            nextTurn: nextTurnLocation,
           ),
         ),
         _InfoPanel(provider: provider),
@@ -155,55 +133,11 @@ class _InfoPanel extends StatelessWidget {
                   ],
                 ),
               ),
-            Row(
-              children: [
-                if (provider.nextTurn != null) ...[
-                  Icon(_turnIcon(provider.nextTurn!), size: 36),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          provider.distanceToNextTurnKm == null
-                              ? provider.nextTurn!.label
-                              : '${_formatDistance(provider.distanceToNextTurnKm!)} · ${provider.nextTurn!.label}',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        Text('next turn', style: theme.textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-                ] else
-                  const Expanded(
-                      child: Text("No more turns — you're near the finish")),
-                Text(
-                  '${(provider.traveledDistanceKm ?? 0).toStringAsFixed(1)} / '
-                  '${provider.ride.distanceKm.toStringAsFixed(1)} km',
-                  style: theme.textTheme.titleMedium,
-                ),
-              ],
+            Text(
+              '${(provider.traveledDistanceKm ?? 0).toStringAsFixed(1)} / '
+              '${provider.ride.distanceKm.toStringAsFixed(1)} km',
+              style: theme.textTheme.titleMedium,
             ),
-            // Cue list — the next few upcoming turns.
-            if (provider.upcomingTurns.length > 1) ...[
-              const Divider(height: 20),
-              for (final turn in provider.upcomingTurns.skip(1))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Icon(_turnIcon(turn), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(turn.label)),
-                      if (provider.traveledDistanceKm != null)
-                        Text(
-                          'in ${_formatDistance(turn.distanceKm - provider.traveledDistanceKm!)}',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                    ],
-                  ),
-                ),
-            ],
           ],
         ),
       ),
