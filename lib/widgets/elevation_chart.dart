@@ -1,9 +1,27 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/ride_profile.dart';
 
 enum ProfileChartMode { elevation, gradient }
+
+/// A "nice" distance step (1/2/2.5/5 × a power of ten) close to
+/// `totalKm / targetLabels`, so the x-axis shows a sensible number of labels
+/// at any ride length instead of always quartering the total distance (which
+/// reads fine at 100 km but is far too sparse at 200+ km).
+double _niceDistanceStepKm(double totalKm, {int targetLabels = 6}) {
+  if (totalKm <= 0) return 1;
+  final rawStep = totalKm / targetLabels;
+  final magnitude =
+      math.pow(10, (math.log(rawStep) / math.ln10).floor()).toDouble();
+  for (final residual in [1, 2, 2.5, 5, 10]) {
+    final step = residual * magnitude;
+    if (step >= rawStep) return step;
+  }
+  return 10 * magnitude;
+}
 
 /// Elevation or gradient profile over distance. Gradient mode fills orange
 /// above 0 % and blue below, mirroring the web app's gradient chart
@@ -58,6 +76,12 @@ class ElevationChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 24,
+              interval: _niceDistanceStepKm(profile.distanceKm.last),
+              // Without this, fl_chart also force-labels the exact last
+              // data point (e.g. "203" on a 203 km ride) alongside the last
+              // "nice" interval tick ("200"), and the two overlap.
+              minIncluded: false,
+              maxIncluded: false,
               getTitlesWidget: (value, meta) => Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('${value.toStringAsFixed(0)}km',
@@ -69,6 +93,8 @@ class ElevationChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 44,
+              minIncluded: false,
+              maxIncluded: false,
               getTitlesWidget: (value, meta) => Text(
                   '${value.toStringAsFixed(0)}$unit',
                   style: const TextStyle(fontSize: 10)),

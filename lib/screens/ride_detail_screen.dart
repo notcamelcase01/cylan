@@ -291,6 +291,7 @@ class _SmoothingControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
@@ -314,6 +315,12 @@ class _SmoothingControl extends StatelessWidget {
           label: '${windowM.round()} m',
           onChanged: busy ? null : onChanged,
           onChangeEnd: busy ? null : onChangeEnd,
+        ),
+        Text(
+          'Lower keeps short, steep rises visible; higher blends them away '
+          'so only the long climbs stand out.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ],
     );
