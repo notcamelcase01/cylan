@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 
 import '../models/ride.dart';
 import '../models/weather_point.dart';
+import '../services/connectivity_service.dart';
 import '../services/offline_ride_store.dart';
 import '../widgets/elevation_chart.dart';
 import '../widgets/route_map.dart';
 import 'live_tracking_screen.dart';
+import 'ride_detail_screen.dart';
 
 /// Read-only detail for a route saved offline. Everything renders from disk
 /// with no network: a fixed (zoom/pan-locked) overview map with the saved
@@ -31,18 +34,39 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => ConnectivityService()..start(),
+      child: Builder(builder: _buildScaffold),
+    );
+  }
+
+  void _switchToLive(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RideDetailScreen(rideId: _ride.id),
+    ));
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     final theme = Theme.of(context);
     final offlineRide = widget.offlineRide;
     final ride = _ride;
     final profile = ride.profile;
     final hasTrack = profile != null && profile.latitude.isNotEmpty;
     final weather = offlineRide.weather;
+    final online = context.watch<ConnectivityService>().online;
 
     return Scaffold(
-      appBar: AppBar(title: Text(ride.name)),
+      appBar: AppBar(
+        title: Text(ride.name),
+        actions: [_ConnectivityDot(online: online)],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (online) ...[
+            _LiveAvailableBanner(onSwitch: () => _switchToLive(context)),
+            const SizedBox(height: 10),
+          ],
           _OfflineBanner(savedAt: offlineRide.savedAt),
           const SizedBox(height: 14),
           if (hasTrack)
@@ -130,6 +154,73 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Small app-bar dot: green when the server is reachable, grey when not.
+class _ConnectivityDot extends StatelessWidget {
+  final bool online;
+  const _ConnectivityDot({required this.online});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = online ? const Color(0xFF2E7D32) : Colors.grey;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Tooltip(
+        message: online ? 'Internet available' : 'Offline',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(online ? 'Online' : 'Offline',
+                style: Theme.of(context).textTheme.labelMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Actionable banner shown when the server becomes reachable, offering to open
+/// the full live view (street map, fresh weather, smoothing).
+class _LiveAvailableBanner extends StatelessWidget {
+  final VoidCallback onSwitch;
+  const _LiveAvailableBanner({required this.onSwitch});
+
+  @override
+  Widget build(BuildContext context) {
+    const green = Color(0xFF2E7D32);
+    return Material(
+      color: green.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onSwitch,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              const Icon(Icons.wifi, size: 20, color: green),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Internet available — switch to the live view for the street '
+                  'map, fresh weather and smoothing.',
+                  style: TextStyle(color: green, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: green),
+            ],
+          ),
+        ),
       ),
     );
   }
