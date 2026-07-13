@@ -38,6 +38,13 @@ class _RideDetailViewState extends State<_RideDetailView> {
   bool _sharing = false;
   ProfileChartMode _chartMode = ProfileChartMode.elevation;
   int? _highlightIndex;
+  double? _pendingSmoothingWindow;
+
+  Future<void> _applySmoothing(double windowM) async {
+    setState(() => _pendingSmoothingWindow = windowM);
+    await context.read<RideDetailProvider>().applySmoothing(windowM.round());
+    if (mounted) setState(() => _pendingSmoothingWindow = null);
+  }
 
   Future<void> _shareImage(Ride ride) async {
     setState(() => _sharing = true);
@@ -187,6 +194,13 @@ class _RideDetailViewState extends State<_RideDetailView> {
               onSelectionChanged: (s) => setState(() => _chartMode = s.first),
             ),
           ),
+          const SizedBox(height: 8),
+          _SmoothingControl(
+            windowM: _pendingSmoothingWindow ?? ride.smoothingWindowM,
+            busy: context.watch<RideDetailProvider>().isApplyingSmoothing,
+            onChanged: (v) => setState(() => _pendingSmoothingWindow = v),
+            onChangeEnd: _applySmoothing,
+          ),
         ],
         const SizedBox(height: 20),
         Row(
@@ -221,6 +235,55 @@ class _RideDetailViewState extends State<_RideDetailView> {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Lets the rider trade off noise vs. detail in the elevation/gradient
+/// profile — mirrors the web app's per-ride smoothing control
+/// (`POST /rides/{id}/smoothing/`, 50-500 m window).
+class _SmoothingControl extends StatelessWidget {
+  final double windowM;
+  final bool busy;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  const _SmoothingControl({
+    required this.windowM,
+    required this.busy,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Row(
+          children: [
+            Text('Smoothing', style: theme.textTheme.labelLarge),
+            const SizedBox(width: 8),
+            if (busy)
+              const SizedBox(
+                height: 12,
+                width: 12,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            const Spacer(),
+            Text('${windowM.round()} m', style: theme.textTheme.bodySmall),
+          ],
+        ),
+        Slider(
+          value: windowM.clamp(50, 500),
+          min: 50,
+          max: 500,
+          divisions: 45,
+          label: '${windowM.round()} m',
+          onChanged: busy ? null : onChanged,
+          onChangeEnd: busy ? null : onChangeEnd,
         ),
       ],
     );

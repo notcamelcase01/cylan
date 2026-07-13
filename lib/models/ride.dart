@@ -18,6 +18,7 @@ class Ride {
   final int pointCount;
   final String? originalFilename;
   final RideProfile? profile;
+  final double smoothingWindowM;
 
   Ride({
     required this.id,
@@ -37,6 +38,7 @@ class Ride {
     required this.pointCount,
     this.originalFilename,
     this.profile,
+    this.smoothingWindowM = 30.0,
   });
 
   factory Ride.fromJson(Map<String, dynamic> json) {
@@ -63,6 +65,7 @@ class Ride {
       profile: json['profile'] == null
           ? null
           : RideProfile.fromJson(json['profile'] as Map<String, dynamic>),
+      smoothingWindowM: numOrNull(json['smoothing_window_m']) ?? 30.0,
     );
   }
 }

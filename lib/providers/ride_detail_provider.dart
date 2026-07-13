@@ -9,6 +9,7 @@ class RideDetailProvider extends ChangeNotifier {
 
   Ride? ride;
   bool isLoading = false;
+  bool isApplyingSmoothing = false;
   String? error;
 
   Future<void> load(int id) async {
@@ -21,6 +22,22 @@ class RideDetailProvider extends ChangeNotifier {
       error = e.message;
     } finally {
       isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> applySmoothing(int windowM) async {
+    final current = ride;
+    if (current == null) return;
+    isApplyingSmoothing = true;
+    error = null;
+    notifyListeners();
+    try {
+      ride = await _api.setSmoothing(current.id, windowM);
+    } on ApiException catch (e) {
+      error = e.message;
+    } finally {
+      isApplyingSmoothing = false;
       notifyListeners();
     }
   }

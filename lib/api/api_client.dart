@@ -165,6 +165,19 @@ class ApiClient {
     return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// Recomputes the ride's elevation/gradient profile with a new smoothing
+  /// window (50-500 m): wider flattens more GPS noise, narrower preserves
+  /// more detail (and more noise).
+  Future<Ride> setSmoothing(int id, int windowM) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/rides/$id/smoothing/'),
+      headers: await _headers(),
+      body: jsonEncode({'window_m': windowM}),
+    );
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<void> deleteRide(int id) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/rides/$id/'),
