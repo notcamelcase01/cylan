@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../models/ride.dart';
-import '../models/weather_point.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/models/weather_point.dart';
 import '../services/offline_ride_store.dart';
 
 /// App-wide state for offline-saved routes: the list shown on the Offline

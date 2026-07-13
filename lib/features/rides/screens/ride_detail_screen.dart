@@ -3,15 +3,15 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/ride.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/widgets/elevation_chart.dart';
+import '../../../core/widgets/route_map.dart';
+import '../../tracking/screens/live_tracking_screen.dart';
+import '../../weather/providers/weather_cache_provider.dart';
+import '../../weather/screens/weather_screen.dart';
 import '../providers/offline_rides_provider.dart';
 import '../providers/ride_detail_provider.dart';
-import '../providers/weather_cache_provider.dart';
 import '../services/share_image_service.dart';
-import '../widgets/elevation_chart.dart';
-import '../widgets/route_map.dart';
-import 'live_tracking_screen.dart';
-import 'weather_screen.dart';
 
 class RideDetailScreen extends StatelessWidget {
   final int rideId;

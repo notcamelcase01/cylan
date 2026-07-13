@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-import '../api/api_client.dart';
-import '../api/api_exception.dart';
-import '../models/weather_point.dart';
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_exception.dart';
+import '../../../core/models/weather_point.dart';
 
 /// App-level cache of fetched weather-along-route results, keyed by ride id.
 ///

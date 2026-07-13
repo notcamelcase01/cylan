@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../models/ride.dart';
+import '../../../core/models/ride.dart';
 import '../services/location_service.dart';
 
 class LiveTrackingProvider extends ChangeNotifier {

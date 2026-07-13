@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../api/api_client.dart';
-import '../api/api_exception.dart';
-import '../models/ride.dart';
-import '../models/strava_route.dart';
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_exception.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/models/strava_route.dart';
 
 /// Steps of the Strava import flow.
 enum StravaStep {

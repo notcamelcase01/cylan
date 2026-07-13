@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-import '../api/api_client.dart';
-import '../api/api_exception.dart';
-import '../models/ride.dart';
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_exception.dart';
+import '../../../core/models/ride.dart';
 
 enum RideSort { newest, nameAsc, distanceAsc, distanceDesc }
 

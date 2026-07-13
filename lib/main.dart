@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'providers/auth_provider.dart';
-import 'providers/offline_rides_provider.dart';
-import 'providers/theme_provider.dart';
-import 'providers/weather_cache_provider.dart';
-import 'screens/auth_gate.dart';
+import 'core/providers/theme_provider.dart';
+import 'features/auth/providers/auth_provider.dart';
+import 'features/auth/screens/auth_gate.dart';
+import 'features/rides/providers/offline_rides_provider.dart';
+import 'features/weather/providers/weather_cache_provider.dart';
 
 void main() {
   runApp(const CylanApp());

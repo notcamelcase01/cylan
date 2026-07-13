@@ -3,13 +3,13 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/ride.dart';
-import '../models/weather_point.dart';
-import '../services/connectivity_service.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/models/weather_point.dart';
+import '../../../core/services/connectivity_service.dart';
+import '../../../core/widgets/elevation_chart.dart';
+import '../../../core/widgets/route_map.dart';
+import '../../tracking/screens/live_tracking_screen.dart';
 import '../services/offline_ride_store.dart';
-import '../widgets/elevation_chart.dart';
-import '../widgets/route_map.dart';
-import 'live_tracking_screen.dart';
 import 'ride_detail_screen.dart';
 
 /// Read-only detail for a route saved offline. Everything renders from disk

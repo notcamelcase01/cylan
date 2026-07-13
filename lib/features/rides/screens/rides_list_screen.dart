@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/ride.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/providers/theme_provider.dart';
+import '../../auth/screens/profile_screen.dart';
+import '../../weather/providers/weather_cache_provider.dart';
 import '../providers/rides_provider.dart';
-import '../providers/theme_provider.dart';
-import '../providers/weather_cache_provider.dart';
 import 'offline_rides_screen.dart';
-import 'profile_screen.dart';
 import 'ride_detail_screen.dart';
 import 'strava_import_screen.dart';
 

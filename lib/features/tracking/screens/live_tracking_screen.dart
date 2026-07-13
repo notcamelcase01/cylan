@@ -3,9 +3,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/ride.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/widgets/route_map.dart';
 import '../providers/live_tracking_provider.dart';
-import '../widgets/route_map.dart';
 
 /// Below this speed, GPS heading is too noisy to be worth showing (it can
 /// swing wildly while stopped or barely moving), so the live marker falls

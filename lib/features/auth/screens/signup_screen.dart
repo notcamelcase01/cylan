@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/widgets/app_background.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/app_background.dart';
 
 /// Minimal account creation: just username + password. Name and email are
 /// optional and set later on the profile screen.

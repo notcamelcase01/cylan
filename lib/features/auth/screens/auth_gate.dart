@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../rides/screens/rides_list_screen.dart';
 import '../providers/auth_provider.dart';
 import 'landing_screen.dart';
-import 'rides_list_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});

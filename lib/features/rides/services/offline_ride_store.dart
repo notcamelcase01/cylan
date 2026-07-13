@@ -4,8 +4,8 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../models/ride.dart';
-import '../models/weather_point.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/models/weather_point.dart';
 
 /// Thrown when a route can't be saved for offline use (e.g. it has no GPS
 /// track). Carries a message safe to show the user.

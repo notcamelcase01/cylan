@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/app_background.dart';
+import '../../../core/widgets/app_background.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
 

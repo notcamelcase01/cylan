@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/strava_route.dart';
+import '../../../core/models/strava_route.dart';
 import '../providers/strava_import_provider.dart';
 
 /// Returns `true` (via `Navigator.pop`) when at least one route was imported,

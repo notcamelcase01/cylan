@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/ride.dart';
+import '../../../core/models/ride.dart';
+import '../../../core/widgets/route_map.dart';
 import '../providers/weather_cache_provider.dart';
-import '../widgets/route_map.dart';
 
 class WeatherScreen extends StatefulWidget {
   final Ride ride;
