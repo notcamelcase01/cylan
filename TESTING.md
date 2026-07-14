@@ -107,6 +107,7 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 - [ ] Start **Live** tracking on the offline ride → GPS tracking still works (route line only, no street basemap).
 - [ ] Confirm offline limitations hold: no street map background, weather is frozen from save time, smoothing is fixed.
 - [ ] Remove the offline copy (pin icon → **Remove**, or swipe in the offline list) → it disappears from Offline rides; the online ride is unaffected.
+- [ ] Save a ride offline, then **delete the online ride** (from My Rides) while its offline copy still exists → reconnect and open the offline copy → the green **"Internet available — switch to the live view"** banner appears (connectivity detected) → tap it → since the online ride no longer exists, this should show a "ride not found" state, not crash or hang.
 
 ---
 
