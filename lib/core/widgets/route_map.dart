@@ -229,7 +229,7 @@ class _RouteMapState extends State<RouteMap> {
         if (widget.showBasemap)
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.cylan',
+            userAgentPackageName: 'com.notcamelcase.cylan',
             minZoom: _minZoom,
             maxZoom: _maxZoom,
           ),
