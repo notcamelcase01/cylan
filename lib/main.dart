@@ -26,7 +26,9 @@ class CylanApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => WeatherCacheProvider()),
+        // restore() pulls previously fetched forecasts off disk so the rides
+        // list shows its weather badges immediately after a cold start.
+        ChangeNotifierProvider(create: (_) => WeatherCacheProvider()..restore()),
         ChangeNotifierProvider(create: (_) => SectionsCacheProvider()),
         ChangeNotifierProvider(create: (_) => OfflineRidesProvider()),
         ChangeNotifierProvider(create: (_) => AudaxEventsCacheProvider()),

@@ -63,6 +63,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     final isLoading = cache.isLoading(rideId);
     final error = cache.errorFor(rideId);
     final hasFetched = cache.hasFetched(rideId);
+    final fetchedAt = cache.fetchedAtFor(rideId);
     final dateFmt = DateFormat('MMM d, HH:mm');
     final profile = widget.ride.profile;
 
@@ -120,6 +121,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
                         : const Text('Get forecast'),
                   ),
                 ),
+                // A cached forecast can now come from a previous app session,
+                // so say when it was fetched rather than letting old data read
+                // as current.
+                if (fetchedAt != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Updated ${dateFmt.format(fetchedAt)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
               ],
             ),
           ),

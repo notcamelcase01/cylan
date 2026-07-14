@@ -70,7 +70,7 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 ### Weather
 - Pick a start/finish time window and fetch a forecast along the route
 - Per-point temperature, feels-like, wind speed/direction, and precipitation
-- Forecast is cached per ride for the session, so it's still there if you navigate back
+- Forecasts are cached per ride and persist across app restarts, so a ride keeps its weather badge on the list without refetching — a forecast is dropped once its planned window has passed, rather than lingering as stale
 
 <!-- SCREENSHOT: weather forecast screen -->
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/f5280707-8c38-4c34-bb6b-04f0edf81122" />

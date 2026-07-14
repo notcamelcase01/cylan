@@ -344,7 +344,14 @@ class _RidesListViewState extends State<_RidesListView> {
             key: ValueKey(ride.id),
             direction: DismissDirection.endToStart,
             confirmDismiss: (_) => _confirmDelete(ride),
-            onDismissed: (_) => context.read<RidesProvider>().delete(ride.id),
+            onDismissed: (_) {
+              context.read<RidesProvider>().delete(ride.id);
+              // The ride is gone, so its cached forecast describes nothing —
+              // drop it (memory + the file on disk) instead of orphaning it.
+              // Any *offline* copy is deliberately left alone: it's a
+              // standalone snapshot the rider opted into, not a cache.
+              context.read<WeatherCacheProvider>().reset(ride.id);
+            },
             background: Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.errorContainer,
