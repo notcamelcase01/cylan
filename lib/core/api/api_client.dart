@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/audax_event.dart';
 import '../models/ride.dart';
 import '../models/ride_section.dart';
 import '../models/strava_route.dart';
@@ -349,6 +350,37 @@ class ApiClient {
       headers: await _headers(),
     ));
     if (response.statusCode != 204) _throwForResponse(response, response.body);
+  }
+
+  // --- Audax events ------------------------------------------------------
+
+  /// Public brevet calendar, always scoped to a single month (defaults to the
+  /// current one when [month]/[year] are omitted). No auth header needed —
+  /// the endpoint is `AllowAny`. Pass [pageUrl] (a `next`/`previous` URL from
+  /// a prior page, which already carries whatever filters were sent) to page
+  /// through results without resending the other filter params.
+  Future<AudaxEventPage> listAudaxEvents({
+    String? pageUrl,
+    int? month,
+    int? year,
+    bool? upcoming,
+    String? city,
+    String? state,
+    String? category,
+  }) async {
+    final uri = pageUrl != null
+        ? Uri.parse(pageUrl)
+        : Uri.parse('$baseUrl/audax-events/').replace(queryParameters: {
+            if (month != null) 'month': '$month',
+            if (year != null) 'year': '$year',
+            if (upcoming != null) 'upcoming': '$upcoming',
+            if (city != null && city.isNotEmpty) 'city': city,
+            if (state != null && state.isNotEmpty) 'state': state,
+            if (category != null && category.isNotEmpty) 'category': category,
+          });
+    final response = await _send(() async => http.get(uri));
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return AudaxEventPage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 }
 

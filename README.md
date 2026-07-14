@@ -29,6 +29,16 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/022d1daa-d93b-42c5-a727-55118ab3ca8f" />
 
 
+### Audax events
+- Browse the public Audax India brevet calendar, one month at a time (defaults to the current month)
+- Step to the previous/next month, or jump straight to one via a month/year picker
+- Filter by upcoming-only, city, state, or brevet category (200/300/400/600/1000)
+- Pull-to-refresh, infinite scroll
+- Tap an event to open its Audax India page; open the route map or call the organizer straight from the list
+- No account needed for this data (public endpoint), reached from the My Rides app bar
+
+<!-- SCREENSHOT: audax events list -->
+
 ### Ride detail
 - Route map with an elevation or gradient profile chart, linked together — tapping a point on the chart highlights it on the map
 - Adjustable smoothing (50–500 m window) to trade off noise vs. detail in the elevation/gradient profile
@@ -99,6 +109,7 @@ The app is organized feature-first under `lib/`:
 lib/
   core/      # shared: API client, domain models, cross-feature services/widgets
   features/
+    audax/
     auth/
     rides/
     tracking/

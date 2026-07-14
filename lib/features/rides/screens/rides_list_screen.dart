@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/ride.dart';
 import '../../../core/providers/theme_provider.dart';
+import '../../audax/screens/audax_events_screen.dart';
 import '../../auth/screens/profile_screen.dart';
 import '../../weather/providers/weather_cache_provider.dart';
 import '../providers/rides_provider.dart';
@@ -88,6 +89,12 @@ class _RidesListViewState extends State<_RidesListView> {
   void _openOffline() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const OfflineRidesScreen()),
+    );
+  }
+
+  void _openAudaxEvents() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AudaxEventsScreen()),
     );
   }
 
@@ -175,6 +182,11 @@ class _RidesListViewState extends State<_RidesListView> {
       appBar: AppBar(
         title: const Text('My Rides'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.event_outlined),
+            tooltip: 'Audax events',
+            onPressed: _openAudaxEvents,
+          ),
           IconButton(
             icon: const Icon(Icons.download_for_offline_outlined),
             tooltip: 'Offline rides',

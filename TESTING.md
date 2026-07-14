@@ -60,6 +60,30 @@ Use the shared test account for anything that hits the backend
 
 ---
 
+## Audax events
+
+Public brevet calendar (`GET /audax-events/`, no auth needed server-side) —
+reached via the calendar icon on **My Rides**.
+
+- [ ] Open **Audax events** (calendar icon, My Rides app bar) → the current month's events load by default.
+- [ ] Tap `<` / `>` next to the month label → the previous/next month's events load.
+- [ ] Tap the month/year label → a picker dialog opens → pick a different month and year → **Go** → that month's events load.
+- [ ] Pick a month with more than 10 events → scroll to the bottom → the next page loads (infinite scroll); pagination is fixed at 10/page server-side.
+- [ ] Pull down to refresh → the current month reloads.
+- [ ] Pick a month with no events → "No audax events for `<Month Year>`" empty state shows (no crash).
+- [ ] With no connection → an error state with **Retry** shows instead of hanging; reconnect and tap **Retry** → the list loads.
+- [ ] Filter icon → toggle **Upcoming only** → events earlier in the month than today disappear; the filter icon fills in to show a filter is active.
+- [ ] Filter icon → enter a **City** or **State** → the list narrows to matches; tap a **category** chip (200/300/400/600/1000) → the list narrows to that distance only.
+- [ ] **Clear all** in the filter sheet → all filters reset and the unfiltered current month reloads.
+- [ ] Changing the month or any filter always resets to page 1 — confirm there's no stale/duplicated data when switching between a filtered and unfiltered view.
+- [ ] Find an event with a missing field (e.g. no club, no start point, no fee, no registration date) → it shows a placeholder ("TBA" / "Unnamed club"), not a blank or hidden row.
+- [ ] Tap an event card → its Audax India event page opens in the browser.
+- [ ] If an event has a route map link, tap the map icon on its card → opens the route map (e.g. RideWithGPS) in the browser.
+- [ ] If an event has a contact number, tap the call icon on its card → starts a phone call / opens the dialer.
+- [ ] Confirm this doesn't disturb anything else on **My Rides** — upload, Strava import, sort, offline rides, profile, and theme toggle all still work as before.
+
+---
+
 ## Ride detail
 
 - [ ] Open a ride → map and stats (distance, ascent, descent, max grade) render.
