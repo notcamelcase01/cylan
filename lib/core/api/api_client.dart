@@ -382,6 +382,16 @@ class ApiClient {
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return AudaxEventPage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
+
+  /// Category/state/city values currently in use, computed live from the same
+  /// data the list endpoint reads — build filter UI from this rather than
+  /// hardcoding a list. Not paginated, no query params, no auth needed.
+  Future<AudaxEventFilters> getAudaxEventFilters() async {
+    final response =
+        await _send(() async => http.get(Uri.parse('$baseUrl/audax-events/filters/')));
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    return AudaxEventFilters.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
 }
 
 class StravaImportResult {

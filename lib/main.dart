@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/providers/theme_provider.dart';
+import 'features/audax/providers/audax_events_cache_provider.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/auth_gate.dart';
 import 'features/rides/providers/offline_rides_provider.dart';
@@ -28,6 +29,7 @@ class CylanApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WeatherCacheProvider()),
         ChangeNotifierProvider(create: (_) => SectionsCacheProvider()),
         ChangeNotifierProvider(create: (_) => OfflineRidesProvider()),
+        ChangeNotifierProvider(create: (_) => AudaxEventsCacheProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(

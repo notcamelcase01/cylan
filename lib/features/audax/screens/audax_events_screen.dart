@@ -4,33 +4,40 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/audax_event.dart';
-import '../providers/audax_events_provider.dart';
+import '../providers/audax_events_cache_provider.dart';
+import '../widgets/audax_category.dart';
 
 /// Browse the public Audax India brevet calendar. The server only ever
 /// answers for a single calendar month at a time (defaults to the current
 /// one) — this screen mirrors that: a month stepper instead of a range
-/// picker, plus optional upcoming/city/state/category filters.
-class AudaxEventsScreen extends StatelessWidget {
+/// picker, plus optional upcoming/city/state/category filters. Fetched
+/// month/filter combos are cached for the rest of the app session in
+/// [AudaxEventsCacheProvider] (registered in `main.dart`), so leaving and
+/// reopening this screen doesn't re-hit the network for the same query.
+class AudaxEventsScreen extends StatefulWidget {
   const AudaxEventsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AudaxEventsProvider()..loadFirst(),
-      child: const _AudaxEventsView(),
-    );
-  }
+  State<AudaxEventsScreen> createState() => _AudaxEventsScreenState();
 }
 
-class _AudaxEventsView extends StatefulWidget {
-  const _AudaxEventsView();
-
-  @override
-  State<_AudaxEventsView> createState() => _AudaxEventsViewState();
-}
-
-class _AudaxEventsViewState extends State<_AudaxEventsView> {
+class _AudaxEventsScreenState extends State<AudaxEventsScreen> {
   final _scrollController = ScrollController();
+
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  bool _upcomingOnly = false;
+  String? _city;
+  String? _state;
+  String? _category;
+
+  String get _key => AudaxEventsCacheProvider.keyFor(
+        year: _selectedMonth.year,
+        month: _selectedMonth.month,
+        upcomingOnly: _upcomingOnly,
+        city: _city,
+        state: _state,
+        category: _category,
+      );
 
   @override
   void initState() {
@@ -38,8 +45,13 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >
           _scrollController.position.maxScrollExtent - 200) {
-        context.read<AudaxEventsProvider>().loadMore();
+        context.read<AudaxEventsCacheProvider>().fetchMore(_key);
       }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AudaxEventsCacheProvider>().fetchFilters();
+      _fetchCurrent();
     });
   }
 
@@ -49,8 +61,28 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
     super.dispose();
   }
 
-  Future<void> _pickMonth(AudaxEventsProvider provider) async {
-    var dialogMonth = provider.selectedMonth;
+  Future<void> _fetchCurrent({bool force = false}) {
+    return context.read<AudaxEventsCacheProvider>().fetchFirst(
+          _key,
+          year: _selectedMonth.year,
+          month: _selectedMonth.month,
+          upcomingOnly: _upcomingOnly,
+          city: _city,
+          state: _state,
+          category: _category,
+          force: force,
+        );
+  }
+
+  void _selectMonth(DateTime month) {
+    final normalized = DateTime(month.year, month.month);
+    if (normalized == _selectedMonth) return;
+    setState(() => _selectedMonth = normalized);
+    _fetchCurrent();
+  }
+
+  Future<void> _pickMonth() async {
+    var dialogMonth = _selectedMonth;
     final result = await showDialog<DateTime>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -109,32 +141,40 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
         },
       ),
     );
-    if (result != null && mounted) {
-      context.read<AudaxEventsProvider>().setMonth(result);
-    }
+    if (result != null && mounted) _selectMonth(result);
   }
 
-  Future<void> _openFilters(AudaxEventsProvider provider) async {
+  Future<void> _openFilters() async {
     final result = await showModalBottomSheet<_AudaxFilters>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => _FiltersSheet(
         initial: _AudaxFilters(
-          upcomingOnly: provider.upcomingOnly,
-          city: provider.city,
-          state: provider.state,
-          category: provider.category,
+          upcomingOnly: _upcomingOnly,
+          city: _city,
+          state: _state,
+          category: _category,
         ),
       ),
     );
-    if (result != null && mounted) {
-      context.read<AudaxEventsProvider>().applyFilters(
-            upcomingOnly: result.upcomingOnly,
-            city: result.city,
-            state: result.state,
-            category: result.category,
-          );
+    if (result == null || !mounted) return;
+    setState(() {
+      _upcomingOnly = result.upcomingOnly;
+      _city = (result.city == null || result.city!.isEmpty) ? null : result.city;
+      _state = (result.state == null || result.state!.isEmpty) ? null : result.state;
+      _category = result.category;
+    });
+    _fetchCurrent();
+  }
+
+  Future<void> _refresh() async {
+    final key = _key;
+    await _fetchCurrent(force: true);
+    if (!mounted) return;
+    final err = context.read<AudaxEventsCacheProvider>().firstErrorFor(key);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Refresh failed: $err')));
     }
   }
 
@@ -149,18 +189,11 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
     if (!launched) _showLaunchError(failureMessage);
   }
 
-  Future<void> _callClub(String number) async {
-    final launched = await launchUrl(Uri(scheme: 'tel', path: number));
-    if (!launched) _showLaunchError("Couldn't start a call.");
-  }
-
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AudaxEventsProvider>();
-    final hasFilters = provider.upcomingOnly ||
-        provider.city != null ||
-        provider.state != null ||
-        provider.category != null;
+    final cache = context.watch<AudaxEventsCacheProvider>();
+    final hasFilters =
+        _upcomingOnly || _city != null || _state != null || _category != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -169,46 +202,56 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
           IconButton(
             icon: Icon(hasFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
             tooltip: 'Filters',
-            onPressed: () => _openFilters(provider),
+            onPressed: _openFilters,
           ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: _MonthStepper(
-            month: provider.selectedMonth,
-            onPrev: () => provider.setMonth(
-              DateTime(provider.selectedMonth.year, provider.selectedMonth.month - 1),
+            month: _selectedMonth,
+            onPrev: () => _selectMonth(
+              DateTime(_selectedMonth.year, _selectedMonth.month - 1),
             ),
-            onNext: () => provider.setMonth(
-              DateTime(provider.selectedMonth.year, provider.selectedMonth.month + 1),
+            onNext: () => _selectMonth(
+              DateTime(_selectedMonth.year, _selectedMonth.month + 1),
             ),
-            onTap: () => _pickMonth(provider),
+            onTap: _pickMonth,
           ),
         ),
       ),
-      body: _buildBody(context, provider),
+      body: _buildBody(context, cache),
     );
   }
 
-  Widget _buildBody(BuildContext context, AudaxEventsProvider provider) {
-    final monthLabel = DateFormat('MMMM yyyy').format(provider.selectedMonth);
+  Widget _buildBody(BuildContext context, AudaxEventsCacheProvider cache) {
+    final key = _key;
+    final events = cache.eventsFor(key);
+    final monthLabel = DateFormat('MMMM yyyy').format(_selectedMonth);
 
-    if (provider.isLoading && provider.events.isEmpty) {
+    if (events == null && cache.isLoadingFirst(key)) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (provider.error != null && provider.events.isEmpty) {
+    if (events == null && cache.firstErrorFor(key) != null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(provider.error!),
+            Text(cache.firstErrorFor(key)!),
             const SizedBox(height: 12),
-            FilledButton(onPressed: provider.loadFirst, child: const Text('Retry')),
+            FilledButton(
+              onPressed: () => _fetchCurrent(force: true),
+              child: const Text('Retry'),
+            ),
           ],
         ),
       );
     }
-    if (provider.events.isEmpty) {
+    if (events == null) {
+      // Fetch hasn't started yet (e.g. this frame, before the post-frame
+      // callback runs) — a brief transitional state.
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (events.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -234,21 +277,40 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
       );
     }
 
+    final showTrailingRow = cache.hasMore(key);
+
     return RefreshIndicator(
-      onRefresh: provider.refresh,
+      onRefresh: _refresh,
       child: ListView.separated(
         controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        itemCount: provider.events.length + (provider.hasMore ? 1 : 0),
+        itemCount: events.length + (showTrailingRow ? 1 : 0),
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
-          if (index >= provider.events.length) {
+          if (index >= events.length) {
+            final moreError = cache.moreErrorFor(key);
+            if (moreError != null && !cache.isLoadingMore(key)) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Text(moreError, style: Theme.of(context).textTheme.bodySmall),
+                      TextButton(
+                        onPressed: () => cache.fetchMore(key),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             return const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             );
           }
-          final event = provider.events[index];
+          final event = events[index];
           return _AudaxEventCard(
             event: event,
             onTap: event.audaxPageUrl == null
@@ -257,9 +319,6 @@ class _AudaxEventsViewState extends State<_AudaxEventsView> {
             onOpenRouteMap: event.routeMapUrl == null
                 ? null
                 : () => _openUrl(event.routeMapUrl!, "Couldn't open the route map."),
-            onCall: event.clubContactNumber == null
-                ? null
-                : () => _callClub(event.clubContactNumber!),
           );
         },
       ),
@@ -328,10 +387,11 @@ class _AudaxFilters {
   });
 }
 
-const _brevetCategories = ['200', '300', '400', '600', '1000'];
-
-/// Bottom sheet for the upcoming/city/state/category filters. Returns the
-/// chosen [_AudaxFilters] via `Navigator.pop`, or `null` if dismissed.
+/// Bottom sheet for the upcoming/city/state/category filters. Category chips
+/// come from [AudaxEventsCacheProvider.filters] (fetched once per session
+/// from `GET /audax-events/filters/`) rather than a hardcoded list, so new
+/// categories the source calendar adds show up with no app update. Returns
+/// the chosen [_AudaxFilters] via `Navigator.pop`, or `null` if dismissed.
 class _FiltersSheet extends StatefulWidget {
   final _AudaxFilters initial;
   const _FiltersSheet({required this.initial});
@@ -357,6 +417,83 @@ class _FiltersSheetState extends State<_FiltersSheet> {
     _cityController.dispose();
     _stateController.dispose();
     super.dispose();
+  }
+
+  Widget _buildCategoryPicker(BuildContext context) {
+    final cache = context.watch<AudaxEventsCacheProvider>();
+    final categories = cache.filters?.categories;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Category', style: Theme.of(context).textTheme.labelLarge),
+            if (cache.filtersLoading && categories == null) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (categories == null && cache.filtersError != null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Couldn't load categories: ${cache.filtersError}",
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+              TextButton(
+                onPressed: () =>
+                    context.read<AudaxEventsCacheProvider>().fetchFilters(force: true),
+                child: const Text('Retry'),
+              ),
+            ],
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              ChoiceChip(
+                label: const Text('Any'),
+                selected: _category == null,
+                onSelected: (_) => setState(() => _category = null),
+              ),
+              // Same colour + label mapping as the cards' badges, so a
+              // category looks the same wherever it appears.
+              for (final c in categories ?? const <String>[])
+                ChoiceChip(
+                  label: Text(audaxCategoryLabel(c)),
+                  selected: _category == c,
+                  labelStyle: TextStyle(
+                    color: audaxCategoryInk(context, audaxCategoryColor(c)),
+                    fontWeight: FontWeight.w600,
+                  ),
+                  backgroundColor:
+                      audaxCategoryFill(context, audaxCategoryColor(c)),
+                  selectedColor: audaxCategoryFill(context, audaxCategoryColor(c)),
+                  side: BorderSide(
+                    color: audaxCategoryColor(c).withValues(
+                      alpha: _category == c ? 0.9 : 0.0,
+                    ),
+                    width: 1.5,
+                  ),
+                  onSelected: (_) => setState(() => _category = _category == c ? null : c),
+                ),
+            ],
+          ),
+      ],
+    );
   }
 
   @override
@@ -397,25 +534,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   const InputDecoration(labelText: 'State', hintText: 'e.g. Maharashtra'),
             ),
             const SizedBox(height: 16),
-            Text('Category', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                ChoiceChip(
-                  label: const Text('Any'),
-                  selected: _category == null,
-                  onSelected: (_) => setState(() => _category = null),
-                ),
-                for (final c in _brevetCategories)
-                  ChoiceChip(
-                    label: Text('$c km'),
-                    selected: _category == c,
-                    onSelected: (_) => setState(() => _category = _category == c ? null : c),
-                  ),
-              ],
-            ),
+            _buildCategoryPicker(context),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -453,29 +572,48 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   }
 }
 
-/// One event row: club, date, start point, fee, registration deadline. Any
-/// missing field shows a placeholder rather than being hidden, matching the
-/// API's guidance (only `audax_id`/`event_date` are guaranteed non-null).
+/// One event row: category, club, date, start point, fee, registration
+/// deadline, contact. Any missing field shows a placeholder rather than being
+/// hidden, matching the API's guidance (only `audax_id`/`event_date` are
+/// guaranteed non-null).
+///
+/// The category badge shares the header row with the club name rather than
+/// taking a row of its own, so the card's height is unchanged. Its colour
+/// also washes the card and tints the date, which is what gives the list its
+/// at-a-glance, category-coded feel.
 class _AudaxEventCard extends StatelessWidget {
   final AudaxEvent event;
   final VoidCallback? onTap;
   final VoidCallback? onOpenRouteMap;
-  final VoidCallback? onCall;
 
   const _AudaxEventCard({
     required this.event,
     required this.onTap,
     required this.onOpenRouteMap,
-    required this.onCall,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     final dateFmt = DateFormat('EEE, MMM d, yyyy');
     final feeFmt = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
+    final seed = audaxCategoryColor(event.category);
+    final accent = audaxCategoryInk(context, seed);
+
     return Card(
+      // A whisper of the category colour over the normal card surface — enough
+      // to warm the list up and group like categories by eye, not enough to
+      // fight the text on it.
+      color: Color.alphaBlend(
+        seed.withValues(alpha: dark ? 0.09 : 0.05),
+        theme.colorScheme.surfaceContainerLow,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: seed.withValues(alpha: dark ? 0.32 : 0.22)),
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
@@ -486,6 +624,8 @@ class _AudaxEventCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  AudaxCategoryBadge(category: event.category),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       event.club ?? 'Unnamed club',
@@ -498,19 +638,20 @@ class _AudaxEventCard extends StatelessWidget {
                       icon: const Icon(Icons.map_outlined),
                       tooltip: 'Route map',
                       visualDensity: VisualDensity.compact,
+                      color: accent,
                       onPressed: onOpenRouteMap,
-                    ),
-                  if (onCall != null)
-                    IconButton(
-                      icon: const Icon(Icons.call_outlined),
-                      tooltip: 'Call organizer',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onCall,
                     ),
                 ],
               ),
               const SizedBox(height: 2),
-              _InfoRow(icon: Icons.event_outlined, label: dateFmt.format(event.eventDate)),
+              // The date is the thing riders scan for, so it carries the
+              // category colour and a heavier weight; the rest stays quiet.
+              _InfoRow(
+                icon: Icons.event_outlined,
+                label: dateFmt.format(event.eventDate),
+                color: accent,
+                bold: true,
+              ),
               const SizedBox(height: 4),
               _InfoRow(icon: Icons.place_outlined, label: event.startPoint ?? 'TBA'),
               const SizedBox(height: 4),
@@ -525,6 +666,11 @@ class _AudaxEventCard extends StatelessWidget {
                     ? 'Registration closes: TBA'
                     : 'Registration closes ${dateFmt.format(event.registrationCloseDate!)}',
               ),
+              const SizedBox(height: 4),
+              _InfoRow(
+                icon: Icons.call_outlined,
+                label: event.clubContactNumber ?? 'TBA',
+              ),
             ],
           ),
         ),
@@ -536,18 +682,32 @@ class _AudaxEventCard extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _InfoRow({required this.icon, required this.label});
+  final Color? color;
+  final bool bold;
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.bold = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final theme = Theme.of(context);
+    final effective = color ?? theme.colorScheme.onSurfaceVariant;
     return Row(
       children: [
-        Icon(icon, size: 15, color: color),
+        Icon(icon, size: 15, color: effective),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: effective,
+              fontWeight: bold ? FontWeight.w700 : null,
+            ),
+          ),
         ),
       ],
     );
