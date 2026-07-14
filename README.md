@@ -48,7 +48,11 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Saved offline with the ride, so sections work with no connection (route line only, no street map)
 
 <!-- SCREENSHOT: notable sections list -->
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/6652d780-80f8-4c1b-b84b-483241dba936" />
+
 <!-- SCREENSHOT: section detail (map + weather + stats) -->
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/ff6b00e0-fa6c-4f35-a3e6-b8b2cc7aa862" />
+
 
 ### Weather
 - Pick a start/finish time window and fetch a forecast along the route
