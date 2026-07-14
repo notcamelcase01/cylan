@@ -33,7 +33,8 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Browse the public Audax India brevet calendar, one month at a time (defaults to the current month)
 - Step to the previous/next month, or jump straight to one via a month/year picker
 - Every event is tagged with its brevet category, colour-coded on a short→long "heat" ramp (teal for a 100, through amber and red, to deep purple for a 1200) so the calendar reads at a glance
-- Filter by upcoming-only, city, state, or brevet category — category options are fetched live from the server, not hardcoded, so new ones (e.g. `1200`, `Fleche`) show up automatically, falling back to a neutral colour until they're given one
+- Filter by upcoming-only, city, state, or brevet category — options are fetched live from the server, not hardcoded, so new ones (e.g. `1200`, `Fleche`) show up automatically, falling back to a neutral colour until they're given one
+- City and state suggest known values as you type, but stay free-text — you can always type something that isn't on the list
 - Pull-to-refresh, infinite scroll
 - Tap an event to open its Audax India page, or open the route map straight from the list; organizer contact number is shown on the card
 - Fetched months/filters are cached for the rest of the app session — revisiting one is instant and doesn't re-hit the network; the cache is memory-only and clears when the app closes

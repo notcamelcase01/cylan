@@ -85,12 +85,28 @@ class AudaxEventFilters {
   });
 
   factory AudaxEventFilters.fromJson(Map<String, dynamic> json) {
-    List<String> strings(dynamic v) =>
+    // Categories are matched server-side with `iexact`, so they must go back
+    // out exactly as they came in — trimming a stored "200 " to "200" would
+    // silently match nothing. City/state use `icontains` (substring), where
+    // tidying is safe, and the source does ship strays like "Coimbatore ".
+    List<String> verbatim(dynamic v) =>
         (v as List<dynamic>).map((e) => e as String).toList();
+
+    List<String> tidied(dynamic v) {
+      final seen = <String>{};
+      final out = <String>[];
+      for (final e in (v as List<dynamic>)) {
+        final s = (e as String).trim();
+        if (s.isEmpty || !seen.add(s.toLowerCase())) continue;
+        out.add(s);
+      }
+      return out; // keeps the API's alphabetical order
+    }
+
     return AudaxEventFilters(
-      categories: strings(json['categories']),
-      states: strings(json['states']),
-      cities: strings(json['cities']),
+      categories: verbatim(json['categories']),
+      states: tidied(json['states']),
+      cities: tidied(json['cities']),
     );
   }
 }

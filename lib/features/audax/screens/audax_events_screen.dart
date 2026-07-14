@@ -419,8 +419,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
     super.dispose();
   }
 
-  Widget _buildCategoryPicker(BuildContext context) {
-    final cache = context.watch<AudaxEventsCacheProvider>();
+  Widget _buildCategoryPicker(BuildContext context, AudaxEventsCacheProvider cache) {
     final categories = cache.filters?.categories;
 
     return Column(
@@ -498,6 +497,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final cache = context.watch<AudaxEventsCacheProvider>();
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
@@ -523,18 +523,21 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               onChanged: (v) => setState(() => _upcomingOnly = v),
             ),
             const SizedBox(height: 8),
-            TextField(
+            _SuggestField(
+              label: 'City',
+              hint: 'e.g. Mumbai',
               controller: _cityController,
-              decoration: const InputDecoration(labelText: 'City', hintText: 'e.g. Mumbai'),
+              options: cache.filters?.cities ?? const [],
             ),
             const SizedBox(height: 12),
-            TextField(
+            _SuggestField(
+              label: 'State',
+              hint: 'e.g. Maharashtra',
               controller: _stateController,
-              decoration:
-                  const InputDecoration(labelText: 'State', hintText: 'e.g. Maharashtra'),
+              options: cache.filters?.states ?? const [],
             ),
             const SizedBox(height: 16),
-            _buildCategoryPicker(context),
+            _buildCategoryPicker(context, cache),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -566,6 +569,106 @@ class _FiltersSheetState extends State<_FiltersSheet> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A text field that suggests known values as you type, without restricting
+/// you to them. City/state are matched server-side as case-insensitive
+/// *substrings*, so a typed value that isn't on the list is perfectly valid
+/// (it just may return nothing) — hence a suggest field rather than a true
+/// dropdown, which would rule that out.
+///
+/// [options] comes from `GET /audax-events/filters/`. If it's empty (the
+/// filter list hasn't loaded, or failed), this degrades to an ordinary text
+/// field with no suggestions, so filtering by hand still works offline.
+class _SuggestField extends StatefulWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final List<String> options;
+
+  const _SuggestField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    required this.options,
+  });
+
+  @override
+  State<_SuggestField> createState() => _SuggestFieldState();
+}
+
+class _SuggestFieldState extends State<_SuggestField> {
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The options overlay is sized to the field, which only LayoutBuilder can
+    // tell us inside the sheet's padding.
+    return LayoutBuilder(
+      builder: (context, constraints) => RawAutocomplete<String>(
+        textEditingController: widget.controller,
+        focusNode: _focusNode,
+        optionsBuilder: (value) {
+          if (widget.options.isEmpty) return const Iterable<String>.empty();
+          final query = value.text.trim().toLowerCase();
+          // Empty field → offer the whole list, so it reads as a dropdown.
+          if (query.isEmpty) return widget.options;
+          return widget.options.where((o) => o.toLowerCase().contains(query));
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) => TextField(
+          controller: controller,
+          focusNode: focusNode,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => onFieldSubmitted(),
+          decoration: InputDecoration(
+            labelText: widget.label,
+            hintText: widget.hint,
+            suffixIcon:
+                widget.options.isEmpty ? null : const Icon(Icons.arrow_drop_down),
+          ),
+        ),
+        optionsViewBuilder: (context, onSelected, options) => Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: 220,
+                  maxWidth: constraints.maxWidth,
+                ),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (context, index) {
+                    final option = options.elementAt(index);
+                    return InkWell(
+                      onTap: () => onSelected(option),
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Text(option),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

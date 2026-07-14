@@ -74,6 +74,16 @@ reached via the calendar icon on **My Rides**.
 - [ ] With no connection → an error state with **Retry** shows instead of hanging; reconnect and tap **Retry** → the list loads.
 - [ ] Filter icon → toggle **Upcoming only** → events earlier in the month than today disappear; the filter icon fills in to show a filter is active.
 - [ ] Filter icon → enter a **City** or **State** → the list narrows to matches; category chips (fetched from `GET /audax-events/filters/`, not hardcoded) → tap one → the list narrows to that distance/category only.
+
+#### City / State suggestions
+- [ ] Tap the empty **City** field → the full city list drops down; tap a suggestion → it fills the field → **Apply** → the list narrows to that city. Same for **State**.
+- [ ] Type a partial name (e.g. `mum`) → suggestions narrow to matches (`Mumbai`, `Navi Mumbai`), case-insensitively.
+- [ ] Type a name that **isn't** in the list (e.g. `Zzz`) → no suggestions appear but the text is still accepted → **Apply** → an empty-state ("No audax events…") shows rather than the input being blocked or reverted.
+- [ ] Type a real city in a **different case** (e.g. `MUMBAI`, `mumbai`) → still returns results (server matches case-insensitively).
+- [ ] Suggestions come from the same once-per-session filter fetch as the category chips — open the sheet a second time → the lists appear with no reload.
+- [ ] With the filter list unavailable (kill the connection before it ever loads) → City/State show as **plain text fields with no dropdown arrow**, and typing + Apply still filters normally.
+- [ ] Scroll a long suggestion list (cities) → it scrolls within its own overlay, capped in height, and doesn't push the sheet around.
+- [ ] Open the sheet with the keyboard up → the suggestion overlay sits against its field and isn't hidden behind the keyboard.
 - [ ] **Clear all** in the filter sheet → all filters reset and the unfiltered current month reloads.
 - [ ] Changing the month or any filter always resets to page 1 — confirm there's no stale/duplicated data when switching between a filtered and unfiltered view.
 - [ ] Find an event with a missing field (e.g. no club, no start point, no fee, no registration date) → it shows a placeholder ("TBA" / "Unnamed club"), not a blank or hidden row.
