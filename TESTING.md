@@ -136,10 +136,13 @@ flutter test
 ```
 
 ### Integration scaffold — `integration_test/app_test.dart`
-An **experimental** end-to-end script (login → open ride → weather → smoothing →
-offline save/remove) that drives the real app against the live API using a test
-account. It's kept as a starting point but is **not** the primary test path —
-manual testing above is. Credentials come from a gitignored `test_config.json`
+An end-to-end script driving this flow against the live API with a test account:
+
+**logout → login → open a ride → weather → smoothing → offline map (save, open, exit)**
+
+It's kept as a starting point, not the primary test path — manual testing
+above is. Verified passing on a physical device; running on macOS desktop is
+flakier (see below). Credentials come from a gitignored `test_config.json`
 (shape in `test_config.example.json`) via `--dart-define-from-file`:
 
 ```
@@ -147,6 +150,8 @@ flutter test integration_test/app_test.dart \
   --dart-define-from-file=test_config.json -d <device-id>
 ```
 
-Known rough edges: on macOS the app window needs real focus to receive taps
-(run from a normal Terminal, not a headless shell); a wirelessly-tethered iOS
+Known rough edges on **macOS desktop only** (not seen on a real device): the
+app window needs real focus to receive taps (run from a normal Terminal, not
+a headless shell), and the default scroll-drag point can land on the route
+map and pan it instead of scrolling the list. A wirelessly-tethered iOS
 device needs `--publish-port`.
