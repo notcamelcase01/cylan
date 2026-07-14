@@ -83,8 +83,10 @@ LatLng _routePointAtKm(RideProfile profile, double km) {
       final span = d[i] - d[i - 1];
       final t = span <= 0 ? 0.0 : (km - d[i - 1]) / span;
       return LatLng(
-        profile.latitude[i - 1] + (profile.latitude[i] - profile.latitude[i - 1]) * t,
-        profile.longitude[i - 1] + (profile.longitude[i] - profile.longitude[i - 1]) * t,
+        profile.latitude[i - 1] +
+            (profile.latitude[i] - profile.latitude[i - 1]) * t,
+        profile.longitude[i - 1] +
+            (profile.longitude[i] - profile.longitude[i - 1]) * t,
       );
     }
   }
@@ -96,9 +98,12 @@ LatLng _routePointAtKm(RideProfile profile, double km) {
 /// back along the route by [_weatherBubbleMinDistanceFraction] of total
 /// distance, so self-crossing routes don't stack bubbles on the same spot.
 List<LatLng> _placeWeatherBubbles(
-    RideProfile profile, List<WeatherPoint> bubbles) {
-  final maxDistanceKm =
-      bubbles.map((p) => p.distanceKm).fold<double>(0, math.max);
+  RideProfile profile,
+  List<WeatherPoint> bubbles,
+) {
+  final maxDistanceKm = bubbles
+      .map((p) => p.distanceKm)
+      .fold<double>(0, math.max);
   final minMeters = maxDistanceKm * 1000 * _weatherBubbleMinDistanceFraction;
   final shiftKm = maxDistanceKm * _weatherBubbleMinDistanceFraction;
   final placed = <LatLng>[];
@@ -137,6 +142,14 @@ class RouteMap extends StatefulWidget {
   /// freely; only the streets underneath are missing.
   final bool showBasemap;
 
+  /// An optional wider route drawn faintly *behind* [profile], for context —
+  /// used by the section detail, where [profile] is one climb/descent and this
+  /// is the whole ride, so the rider can see where the section sits and which
+  /// way the route continues. The camera still frames [profile], so the context
+  /// line just trails off the edges until the user zooms out. Null on the full
+  /// ride map (nothing to sit behind).
+  final List<LatLng>? contextRoute;
+
   const RouteMap({
     super.key,
     required this.profile,
@@ -146,6 +159,7 @@ class RouteMap extends StatefulWidget {
     this.highlightLocation,
     this.interactive = true,
     this.showBasemap = true,
+    this.contextRoute,
   });
 
   @override
@@ -199,10 +213,10 @@ class _RouteMapState extends State<RouteMap> {
     final bounds = LatLngBounds.fromPoints(points);
     final routeColor = Theme.of(context).colorScheme.primary;
     final weatherPoints = _thinWeather(widget.weatherPoints);
-    final weatherBubblePositions =
-        _placeWeatherBubbles(profile, weatherPoints);
-    final maxWeatherDistanceKm =
-        weatherPoints.map((p) => p.distanceKm).fold<double>(0, math.max);
+    final weatherBubblePositions = _placeWeatherBubbles(profile, weatherPoints);
+    final maxWeatherDistanceKm = weatherPoints
+        .map((p) => p.distanceKm)
+        .fold<double>(0, math.max);
 
     return FlutterMap(
       mapController: _mapController,
@@ -233,9 +247,31 @@ class _RouteMapState extends State<RouteMap> {
             minZoom: _minZoom,
             maxZoom: _maxZoom,
           ),
+        // Whole-ride line behind the main route, for the section detail (see
+        // [contextRoute]). The route color at the normal width; the section
+        // itself is drawn on top thicker and in dark orange, so it reads as a
+        // highlighted stretch of the same route.
+        if (widget.contextRoute != null && widget.contextRoute!.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: widget.contextRoute!,
+                strokeWidth: 4,
+                color: routeColor,
+              ),
+            ],
+          ),
         PolylineLayer(
           polylines: [
-            Polyline(points: points, strokeWidth: 4, color: routeColor),
+            Polyline(
+              points: points,
+              // Thicken and recolor the section over its context line so it
+              // stands out as "you are here" on the full route.
+              strokeWidth: widget.contextRoute != null ? 7 : 4,
+              color: widget.contextRoute != null
+                  ? const Color(0xFFC2410C) // dark orange
+                  : routeColor,
+            ),
           ],
         ),
         MarkerLayer(
@@ -257,8 +293,11 @@ class _RouteMapState extends State<RouteMap> {
                         // navigation icon points up (north) at angle 0, so
                         // rotate directly by the heading (degrees -> radians).
                         angle: widget.liveHeading! * math.pi / 180,
-                        child: const Icon(Icons.navigation,
-                            color: Colors.blue, size: 30),
+                        child: const Icon(
+                          Icons.navigation,
+                          color: Colors.blue,
+                          size: 30,
+                        ),
                       ),
               ),
             if (widget.highlightLocation != null)
@@ -296,7 +335,8 @@ class _RouteMapState extends State<RouteMap> {
                     fit: BoxFit.scaleDown,
                     child: _WeatherBubble(
                       point: weatherPoints[i],
-                      secondHalf: weatherPoints[i].distanceKm >=
+                      secondHalf:
+                          weatherPoints[i].distanceKm >=
                           maxWeatherDistanceKm / 2,
                     ),
                   ),
@@ -353,13 +393,19 @@ class _WeatherBubble extends StatelessWidget {
           Text(
             temp,
             style: TextStyle(
-                fontSize: 8, fontWeight: FontWeight.w600, color: foreground),
+              fontSize: 8,
+              fontWeight: FontWeight.w600,
+              color: foreground,
+            ),
           ),
           if (point.windDirectionDeg != null) ...[
             const SizedBox(width: 1),
             Transform.rotate(
               angle: (point.windDirectionDeg! + 180) % 360 * math.pi / 180,
-              child: Text('↑', style: TextStyle(fontSize: 8, color: foreground)),
+              child: Text(
+                '↑',
+                style: TextStyle(fontSize: 8, color: foreground),
+              ),
             ),
           ],
         ],

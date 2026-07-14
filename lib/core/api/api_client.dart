@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/ride.dart';
+import '../models/ride_section.dart';
 import '../models/strava_route.dart';
 import '../models/user.dart';
 import '../models/weather_point.dart';
@@ -256,6 +257,21 @@ class ApiClient {
     if (response.statusCode != 200) _throwForResponse(response, response.body);
     return (jsonDecode(response.body) as List<dynamic>)
         .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// The ride's notable climbs and descents, detected and classified on the
+  /// server. Each is self-contained (carries its own coordinates); the app
+  /// only displays them. Returns an empty list for a ride with none.
+  Future<List<RideSection>> getSections(int id) async {
+    final response = await _send(() async => http.get(
+      Uri.parse('$baseUrl/rides/$id/sections/'),
+      headers: await _headers(),
+    ));
+    if (response.statusCode != 200) _throwForResponse(response, response.body);
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    return (decoded['sections'] as List<dynamic>? ?? [])
+        .map((e) => RideSection.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

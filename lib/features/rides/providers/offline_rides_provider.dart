@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/models/ride.dart';
+import '../../../core/models/ride_section.dart';
 import '../../../core/models/weather_point.dart';
 import '../services/offline_ride_store.dart';
 
@@ -53,13 +54,17 @@ class OfflineRidesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Saves a ride (route + weather) for offline use. Returns null on success or
-  /// a user-facing error message on failure.
-  Future<String?> save(Ride ride, List<WeatherPoint> weather) async {
+  /// Saves a ride (route + weather + notable sections) for offline use. Returns
+  /// null on success or a user-facing error message on failure.
+  Future<String?> save(
+    Ride ride,
+    List<WeatherPoint> weather,
+    List<RideSection> sections,
+  ) async {
     _savingIds.add(ride.id);
     notifyListeners();
     try {
-      await _store.save(ride, weather);
+      await _store.save(ride, weather, sections);
       _savedIds.add(ride.id);
       final loaded = await _store.load(ride.id);
       if (loaded != null) {

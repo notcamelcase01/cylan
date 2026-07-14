@@ -4,12 +4,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/models/ride.dart';
+import '../../../core/models/ride_profile.dart';
 import '../../../core/models/weather_point.dart';
 import '../../../core/services/connectivity_service.dart';
 import '../../../core/widgets/elevation_chart.dart';
 import '../../../core/widgets/route_map.dart';
 import '../../tracking/screens/live_tracking_screen.dart';
 import '../services/offline_ride_store.dart';
+import '../widgets/notable_sections_card.dart';
 import 'ride_detail_screen.dart';
 
 /// Read-only detail for a route saved offline. Everything renders from disk
@@ -40,6 +42,53 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
     );
   }
 
+  /// Builds the notable-sections and weather blocks.
+  ///
+  /// When both are present, they share one fixed-height area you can swipe
+  /// between (sections ⇄ weather) while the map and stats above stay put.
+  /// With only one of them, it renders normally with no swipe.
+  List<Widget> _buildSectionsAndWeather(
+    BuildContext context, {
+    required bool hasTrack,
+    required OfflineRide offlineRide,
+    required RideProfile? profile,
+    required List<WeatherPoint> weather,
+  }) {
+    final hasSections =
+        hasTrack && profile != null && offlineRide.sections.isNotEmpty;
+    final hasWeather = weather.isNotEmpty;
+
+    final sectionsPage = hasSections
+        ? NotableSectionsCard(
+            // Same list + section detail as online — reads the sections frozen
+            // at save time; the map draws without a basemap (no OSM tiles).
+            sections: offlineRide.sections,
+            profile: profile,
+            weather: weather,
+            showBasemap: false,
+          )
+        : null;
+    final weatherPage = hasWeather
+        ? _WeatherSection(weather: weather, savedAt: offlineRide.savedAt)
+        : null;
+
+    // Both present → swipeable pager. Only one → plain block, no swipe.
+    if (sectionsPage != null && weatherPage != null) {
+      return [
+        const SizedBox(height: 24),
+        _SectionsWeatherPager(
+          sectionsPage: sectionsPage,
+          weatherPage: weatherPage,
+        ),
+      ];
+    }
+    final only = sectionsPage ?? weatherPage;
+    if (only != null) {
+      return [const SizedBox(height: 24), only];
+    }
+    return const [];
+  }
+
   void _switchToLive(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => RideDetailScreen(rideId: _ride.id),
@@ -47,7 +96,6 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
   }
 
   Widget _buildScaffold(BuildContext context) {
-    final theme = Theme.of(context);
     final offlineRide = widget.offlineRide;
     final ride = _ride;
     final profile = ride.profile;
@@ -137,22 +185,13 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
               ),
             ),
           ],
-          if (weather.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Text('Weather along route',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            Text(
-              'Saved ${DateFormat('MMM d, HH:mm').format(offlineRide.savedAt)} · won\'t update offline',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 10),
-            for (final p in weather) ...[
-              _WeatherRow(point: p),
-              const SizedBox(height: 8),
-            ],
-          ],
+          ..._buildSectionsAndWeather(
+            context,
+            hasTrack: hasTrack,
+            offlineRide: offlineRide,
+            profile: profile,
+            weather: weather,
+          ),
         ],
       ),
     );
@@ -322,6 +361,166 @@ class _StatsRow extends StatelessWidget {
                     style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant)),
               ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The frozen "Weather along route" block: heading, saved-at note, and one
+/// row per forecast point. Used both standalone and as a page in the
+/// [_SectionsWeatherPager].
+class _WeatherSection extends StatelessWidget {
+  final List<WeatherPoint> weather;
+  final DateTime savedAt;
+  const _WeatherSection({required this.weather, required this.savedAt});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Weather along route',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        Text(
+          'Saved ${DateFormat('MMM d, HH:mm').format(savedAt)} · won\'t update offline',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        for (final p in weather) ...[
+          _WeatherRow(point: p),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+/// A fixed-height area holding the notable-sections and weather blocks as two
+/// horizontally swipeable pages. The map, stats and chart above it stay put —
+/// only this region scrolls sideways. A tappable pill on top shows which page
+/// is active and lets you jump between them; each page scrolls vertically if
+/// its content overflows.
+class _SectionsWeatherPager extends StatefulWidget {
+  final Widget sectionsPage;
+  final Widget weatherPage;
+
+  const _SectionsWeatherPager({
+    required this.sectionsPage,
+    required this.weatherPage,
+  });
+
+  @override
+  State<_SectionsWeatherPager> createState() => _SectionsWeatherPagerState();
+}
+
+class _SectionsWeatherPagerState extends State<_SectionsWeatherPager> {
+  final _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int index) {
+    _controller.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Enough room for a few rows; each page scrolls internally past that.
+    final height =
+        (MediaQuery.of(context).size.height * 0.5).clamp(320.0, 520.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _PagerTabs(
+          page: _page,
+          labels: const ['Sections', 'Weather'],
+          onTap: _goTo,
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: height,
+          child: PageView(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _page = i),
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: widget.sectionsPage,
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: widget.weatherPage,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The two-segment pill that heads the [_SectionsWeatherPager]. Highlights the
+/// active page and lets you tap to switch (in step with swiping).
+class _PagerTabs extends StatelessWidget {
+  final int page;
+  final List<String> labels;
+  final ValueChanged<int> onTap;
+
+  const _PagerTabs({
+    required this.page,
+    required this.labels,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onTap(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: page == i
+                        ? theme.colorScheme.primary
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    labels[i],
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: page == i
+                          ? theme.colorScheme.onPrimary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
             ),
         ],
       ),

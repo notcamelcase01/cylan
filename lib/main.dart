@@ -5,6 +5,7 @@ import 'core/providers/theme_provider.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/auth_gate.dart';
 import 'features/rides/providers/offline_rides_provider.dart';
+import 'features/rides/providers/sections_cache_provider.dart';
 import 'features/weather/providers/weather_cache_provider.dart';
 
 void main() {
@@ -25,6 +26,7 @@ class CylanApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => WeatherCacheProvider()),
+        ChangeNotifierProvider(create: (_) => SectionsCacheProvider()),
         ChangeNotifierProvider(create: (_) => OfflineRidesProvider()),
       ],
       child: Consumer<ThemeProvider>(

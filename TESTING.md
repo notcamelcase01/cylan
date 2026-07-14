@@ -68,6 +68,15 @@ Use the shared test account for anything that hits the backend
 - [ ] Drag the **Smoothing** slider (50–500 m) → the profile re-smooths; the value label updates; a brief spinner shows while it applies.
 - [ ] On a wide screen (tablet / landscape / unfolded foldable) → the map and stats lay out side-by-side.
 
+### Notable sections
+- [ ] Open a ride with climbs/descents → a **Notable sections** list shows at the bottom, each row with an icon, label, distance range, and average gradient.
+- [ ] Open a ride with no notable sections → the list is simply absent (no empty heading, no crash).
+- [ ] Tap a section → a detail screen opens: the map is zoomed to just that section, with start/end flags and the weather bubbles that fall on it.
+- [ ] The section detail shows its stats (length, elevation change, avg/max grade; sharp-turn count for technical descents) and an elevation/gradient chart of just that section.
+- [ ] Tap a point on the section's chart → it highlights on the section map (same chart↔map linkage as the full ride).
+- [ ] Open a section that has rain in its forecast **and** is a descent → a caution callout appears ("Rain on a descent — surfaces may be slick…").
+- [ ] Go back → you return to the ride detail with the sections list intact.
+
 ### Share image — **manual only** (native share sheet)
 - [ ] Tap the share icon → the share sheet opens with a generated snapshot.
 - [ ] The snapshot looks correct: map, stats, current chart, and "Cylan" branding.
@@ -104,6 +113,7 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 - [ ] On a ride, tap the **download / save-offline** icon → read the limitations dialog → **Save** → a determinate progress spinner runs, then the icon becomes a filled pin.
 - [ ] Open **Offline rides** (icon on My Rides app bar) → the saved ride is listed with its saved date and weather snapshot.
 - [ ] Turn the device fully offline (airplane mode) → open the offline ride → the route line, saved weather, and stats load with no connection.
+- [ ] While offline, the **Notable sections** list is present (if the ride had any) → tap a section → its detail opens with the section map (route line only, no street basemap) and the frozen weather on it — same UI as online.
 - [ ] Start **Live** tracking on the offline ride → GPS tracking still works (route line only, no street basemap).
 - [ ] Confirm offline limitations hold: no street map background, weather is frozen from save time, smoothing is fixed.
 - [ ] Remove the offline copy (pin icon → **Remove**, or swipe in the offline list) → it disappears from Offline rides; the online ride is unaffected.
@@ -139,7 +149,11 @@ flutter test
 ### Integration scaffold — `integration_test/app_test.dart`
 An end-to-end script driving this flow against the live API with a test account:
 
-**logout → login → open a ride → weather → smoothing → offline map (save, open, exit)**
+**logout → login → open a ride → weather → notable section (open, exit) → smoothing → offline map (save, open, exit)**
+
+The notable-section and smoothing/offline steps are guarded — they run only if
+the test ride actually has sections / a GPS track, so the script still passes on
+a ride without them.
 
 It's kept as a starting point, not the primary test path — manual testing
 above is. Verified passing on a physical device; running on macOS desktop is

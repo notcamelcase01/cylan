@@ -64,7 +64,8 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('logout -> login -> ride -> weather -> smoothing', (tester) async {
+  testWidgets('logout -> login -> ride -> weather -> section -> smoothing',
+      (tester) async {
     expect(
       _username.isNotEmpty && _password.isNotEmpty,
       isTrue,
@@ -138,6 +139,29 @@ void main() {
 
     await _tap(tester, find.byTooltip('Back'));
     await _pumpUntilFound(tester, find.text('Weather'));
+
+    // Notable sections live at the bottom of the ride detail and only render
+    // for rides where the server detected climbs/descents. Scroll to the
+    // heading first; if this ride has any, open the first section, confirm the
+    // section detail rendered, and come back - otherwise skip.
+    final sectionsHeading = find.text('Notable sections');
+    try {
+      await _scrollIntoView(tester, sectionsHeading);
+    } catch (_) {
+      // No notable sections on this ride - nothing to open.
+    }
+    if (sectionsHeading.evaluate().isNotEmpty) {
+      await _tap(tester, find.byIcon(Icons.chevron_right).first);
+      await _pumpUntilFound(
+        tester,
+        find.text(
+          'This section is highlighted from the full route. '
+          'Distances above are measured along the whole ride.',
+        ),
+      );
+      await _tap(tester, find.byTooltip('Back'));
+      await _pumpUntilFound(tester, find.text('Weather'));
+    }
 
     // Slider only renders for rides with a GPS track (hasTrack), and starts
     // below the fold, so it may not exist in the tree until scrolled to -

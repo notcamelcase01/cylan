@@ -33,12 +33,22 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Route map with an elevation or gradient profile chart, linked together — tapping a point on the chart highlights it on the map
 - Adjustable smoothing (50–500 m window) to trade off noise vs. detail in the elevation/gradient profile
 - Distance, ascent, descent, and max grade stats
+- Notable sections: the ride's climbs and descents, listed and tappable
 - Share a snapshot of the ride (map + stats + chart) as an image
 - Save a ride for offline use (see below)
 
 <!-- SCREENSHOT: ride detail screen -->
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/3cded8b5-7886-4fb3-8768-bfab901df27c" />
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/13d9bbbe-48ca-4770-ab4e-a79ce71665c7" />
+
+### Notable sections
+- Each climb or descent the server detected on the route, listed under the ride with its length, gradient, and category (e.g. *very steep climb*, *technical descent*)
+- Tap one to open it on its own map, zoomed to just that section with the weather that falls on it — so a steep descent in the rain stands out before you ride it
+- Section detail also shows the slice's elevation/gradient chart and its stats (length, elevation change, avg/max grade, sharp turns)
+- Saved offline with the ride, so sections work with no connection (route line only, no street map)
+
+<!-- SCREENSHOT: notable sections list -->
+<!-- SCREENSHOT: section detail (map + weather + stats) -->
 
 ### Weather
 - Pick a start/finish time window and fetch a forecast along the route
@@ -55,8 +65,8 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Works with only the route line (no street map) when offline
 
 ### Offline rides
-- Save a route, its weather snapshot, and map tiles for use with no connection
-- Offline routes show the route as a line (no street background) and weather frozen at save time; live GPS tracking still works offline
+- Save a route, its weather snapshot, and notable sections for use with no connection
+- Offline routes show the route as a line (no street background) and weather frozen at save time; notable sections and live GPS tracking still work offline
 - Manage/delete saved offline rides separately from the online list
 
 <!-- SCREENSHOT: offline rides list -->

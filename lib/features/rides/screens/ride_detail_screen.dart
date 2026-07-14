@@ -11,7 +11,9 @@ import '../../weather/providers/weather_cache_provider.dart';
 import '../../weather/screens/weather_screen.dart';
 import '../providers/offline_rides_provider.dart';
 import '../providers/ride_detail_provider.dart';
+import '../providers/sections_cache_provider.dart';
 import '../services/share_image_service.dart';
+import '../widgets/notable_sections_card.dart';
 
 class RideDetailScreen extends StatelessWidget {
   final int rideId;
@@ -49,6 +51,10 @@ class _RideDetailViewState extends State<_RideDetailView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<OfflineRidesProvider>().refreshSavedState(widget.rideId);
+        // Notable sections are stable per ride, so fetch once (the provider
+        // no-ops if already cached) and cache app-wide, so they survive
+        // navigating into a section and can be read at offline-save time.
+        context.read<SectionsCacheProvider>().fetch(widget.rideId);
       }
     });
   }
@@ -84,8 +90,11 @@ class _RideDetailViewState extends State<_RideDetailView> {
 
     final weather =
         context.read<WeatherCacheProvider>().pointsFor(ride.id) ?? const [];
-    final message =
-        await context.read<OfflineRidesProvider>().save(ride, weather);
+    final sections =
+        context.read<SectionsCacheProvider>().sectionsFor(ride.id) ?? const [];
+    final message = await context
+        .read<OfflineRidesProvider>()
+        .save(ride, weather, sections);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message ?? 'Saved for offline use'),
@@ -180,6 +189,8 @@ class _RideDetailViewState extends State<_RideDetailView> {
     // shows here (and in the share snapshot) even after navigating back.
     final weatherPoints =
         context.watch<WeatherCacheProvider>().pointsFor(ride.id) ?? const [];
+    final sections =
+        context.watch<SectionsCacheProvider>().sectionsFor(ride.id) ?? const [];
 
     final theme = Theme.of(context);
 
@@ -344,6 +355,14 @@ class _RideDetailViewState extends State<_RideDetailView> {
             ),
           ],
         ),
+        if (profile != null && sections.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          NotableSectionsCard(
+            sections: sections,
+            profile: profile,
+            weather: weatherPoints,
+          ),
+        ],
       ],
     );
   }
