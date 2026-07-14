@@ -30,7 +30,7 @@ Use the shared test account for anything that hits the backend
 - [ ] While logged in, put the device in airplane mode and reopen → you stay logged in (not kicked to landing).
 
 ### Profile
-- [ ] Open Profile (person icon, top-right of My Rides) → your username shows.
+- [ ] Open Profile (⋮ overflow menu, top-right of My Rides → **Profile**) → your username shows.
 - [ ] Set a name and email, tap **Save changes** → a "Profile saved" confirmation appears; reopen Profile to confirm it persisted.
 - [ ] Enter an invalid email → validation blocks the save.
 - [ ] Tap **Log out** → you return to the landing screen; reopening the app does not auto-login.
@@ -63,9 +63,9 @@ Use the shared test account for anything that hits the backend
 ## Audax events
 
 Public brevet calendar (`GET /audax-events/`, no auth needed server-side) —
-reached via the calendar icon on **My Rides**.
+reached via the ⋮ overflow menu on **My Rides**.
 
-- [ ] Open **Audax events** (calendar icon, My Rides app bar) → the current month's events load by default.
+- [ ] Open **Audax events** (⋮ menu on My Rides → **Audax events**) → the current month's events load by default.
 - [ ] Tap `<` / `>` next to the month label → the previous/next month's events load.
 - [ ] Tap the month/year label → a picker dialog opens → pick a different month and year → **Go** → that month's events load.
 - [ ] Pick a month with more than 10 events → scroll to the bottom → the next page loads (infinite scroll); pagination is fixed at 10/page server-side.
@@ -166,7 +166,7 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 ## Offline rides — **manual only** (needs no connection)
 
 - [ ] On a ride, tap the **download / save-offline** icon → read the limitations dialog → **Save** → a determinate progress spinner runs, then the icon becomes a filled pin.
-- [ ] Open **Offline rides** (icon on My Rides app bar) → the saved ride is listed with its saved date and weather snapshot.
+- [ ] Open **Offline rides** (⋮ menu on My Rides → **Offline rides**) → the saved ride is listed with its saved date and weather snapshot.
 - [ ] Turn the device fully offline (airplane mode) → open the offline ride → the route line, saved weather, and stats load with no connection.
 - [ ] While offline, the **Notable sections** list is present (if the ride had any) → tap a section → its detail opens with the section map (route line only, no street basemap) and the frozen weather on it — same UI as online.
 - [ ] Start **Live** tracking on the offline ride → GPS tracking still works (route line only, no street basemap).
@@ -178,8 +178,14 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 
 ## Cross-cutting
 
+### My Rides app bar
+- [ ] The bar shows only the **title, Sort (⇅), and ⋮** — nothing else competes with "My Rides", and the title isn't squeezed on a small phone.
+- [ ] ⋮ opens a labelled menu: **Audax events**, **Offline rides**, divider, **Theme: …**, **Profile** — each navigates/acts correctly and the menu closes after.
+- [ ] Sort still works directly from its own icon (not buried in ⋮).
+- [ ] With the rides list failed/offline, the **View offline rides** button in the error state still reaches offline rides without going through ⋮.
+
 ### Theme
-- [ ] Cycle the theme toggle (My Rides app bar): **Light → Dark → System** → the whole app restyles.
+- [ ] Cycle the theme (⋮ menu on My Rides → **Theme: …**): **Light → Dark → System** → the whole app restyles. The menu closes on each tap, so reopen it to cycle again; the item's label and icon reflect the current mode.
 - [ ] Restart the app → the chosen theme persists.
 - [ ] Spot-check every screen in both light and dark → no unreadable text, clipped labels, or broken contrast.
 

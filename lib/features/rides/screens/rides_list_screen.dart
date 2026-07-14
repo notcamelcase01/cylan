@@ -181,17 +181,10 @@ class _RidesListViewState extends State<_RidesListView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Rides'),
+        // Sort is the only action that acts on this list, so it's the only one
+        // that earns a slot; navigation and the theme toggle live in the
+        // overflow, where they at least get readable labels.
         actions: [
-          IconButton(
-            icon: const Icon(Icons.event_outlined),
-            tooltip: 'Audax events',
-            onPressed: _openAudaxEvents,
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_for_offline_outlined),
-            tooltip: 'Offline rides',
-            onPressed: _openOffline,
-          ),
           PopupMenuButton<RideSort>(
             icon: const Icon(Icons.sort),
             tooltip: 'Sort rides',
@@ -210,17 +203,57 @@ class _RidesListViewState extends State<_RidesListView> {
             ],
           ),
           Consumer<ThemeProvider>(
-            builder: (context, theme, _) => IconButton(
-              icon: Icon(theme.icon),
-              tooltip: 'Theme: ${theme.label}',
-              onPressed: theme.cycle,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            tooltip: 'Profile',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            builder: (context, theme, _) => PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (value) {
+                switch (value) {
+                  case 'audax':
+                    _openAudaxEvents();
+                  case 'offline':
+                    _openOffline();
+                  case 'theme':
+                    theme.cycle();
+                  case 'profile':
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                    );
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'audax',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.event_outlined),
+                    title: Text('Audax events'),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'offline',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.download_for_offline_outlined),
+                    title: Text('Offline rides'),
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'theme',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(theme.icon),
+                    title: Text('Theme: ${theme.label}'),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'profile',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.account_circle_outlined),
+                    title: Text('Profile'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

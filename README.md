@@ -38,7 +38,7 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Pull-to-refresh, infinite scroll
 - Tap an event to open its Audax India page, or open the route map straight from the list; organizer contact number is shown on the card
 - Fetched months/filters are cached for the rest of the app session — revisiting one is instant and doesn't re-hit the network; the cache is memory-only and clears when the app closes
-- No account needed for this data (public endpoint), reached from the My Rides app bar
+- No account needed for this data (public endpoint), reached from the ⋮ menu on My Rides
 
 <!-- SCREENSHOT: audax events list -->
 
