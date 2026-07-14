@@ -37,13 +37,27 @@ Future<void> _pumpUntilFound(
   await tester.pump(const Duration(milliseconds: 200));
 }
 
-// On a small desktop window, content can be taller than the visible
-// viewport (e.g. the landing screen's hero + feature list), so a target
-// below the fold never receives the tap even though the finder locates it.
-// Scroll it into view first.
-Future<void> _tap(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
+// Ride detail (and some other screens) render their content in a plain
+// ListView, which only *builds* children within the viewport + cache extent -
+// a target far below the fold (e.g. the Weather/Live row, under the map and
+// chart) doesn't exist in the element tree yet. ensureVisible() can't help
+// with that since it needs the element to already exist; scrollUntilVisible()
+// scrolls incrementally and re-checks after each step, which works even
+// before the target has been built.
+Future<void> _scrollIntoView(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+  } else {
+    // Positive delta drags content upward, revealing items further down a
+    // standard (AxisDirection.down) vertical list - see
+    // flutter_test's WidgetController.scrollUntilVisible.
+    await tester.scrollUntilVisible(finder, 300);
+  }
   await tester.pump();
+}
+
+Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await _scrollIntoView(tester, finder);
   await tester.tap(finder);
 }
 
@@ -104,7 +118,10 @@ void main() {
 
     expect(find.byType(Card), findsWidgets);
     await _tap(tester, find.byType(Card).first);
-    await _pumpUntilFound(tester, find.text('Weather'));
+    // The share icon is in the AppBar (not the scrollable body) and only
+    // renders once the ride has loaded, so it's a reliable "ready" signal -
+    // unlike 'Weather', which lives below the fold and may not be built yet.
+    await _pumpUntilFound(tester, find.byIcon(Icons.ios_share));
 
     await _tap(tester, find.text('Weather'));
     await _pumpUntilFound(tester, find.text('Get forecast'));
@@ -122,10 +139,16 @@ void main() {
     await _tap(tester, find.byTooltip('Back'));
     await _pumpUntilFound(tester, find.text('Weather'));
 
+    // Slider only renders for rides with a GPS track (hasTrack), and starts
+    // below the fold, so it may not exist in the tree until scrolled to -
+    // attempt the scroll before deciding whether it's present at all.
     final slider = find.byType(Slider);
+    try {
+      await _scrollIntoView(tester, slider);
+    } catch (_) {
+      // Not present on this ride (no track) - nothing to drag.
+    }
     if (slider.evaluate().isNotEmpty) {
-      await tester.ensureVisible(slider);
-      await tester.pump();
       await tester.drag(slider, const Offset(40, 0));
       await tester.pump(const Duration(milliseconds: 500));
     }
