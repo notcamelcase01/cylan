@@ -77,8 +77,8 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 
 
 ### Live tracking
-- Turn on GPS and follow your position live against the planned route
-- Shows distance traveled vs. total, and warns when you've drifted off route
+- Turn on GPS and follow your position live against the planned route; the camera auto-follows you, and panning the map drops into free-look with a **Recenter** button to jump back and re-engage auto-follow
+- Shows distance from the start and a live GPS status pill (searching / locked / signal lost), with a small icon badge — not a distance readout — when you've drifted off route
 - Works with only the route line (no street map) when offline
 
 ### Offline rides
