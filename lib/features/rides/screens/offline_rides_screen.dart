@@ -78,8 +78,7 @@ class _OfflineRidesScreenState extends State<OfflineRidesScreen> {
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         if (index == 0) return const _LimitationBanner();
-        final offlineRide = provider.rides[index - 1];
-        return _OfflineRideCard(offlineRide: offlineRide);
+        return _OfflineRideCard(summary: provider.rides[index - 1]);
       },
     );
   }
@@ -119,21 +118,20 @@ class _LimitationBanner extends StatelessWidget {
 }
 
 class _OfflineRideCard extends StatelessWidget {
-  final OfflineRide offlineRide;
-  const _OfflineRideCard({required this.offlineRide});
+  final OfflineRideSummary summary;
+  const _OfflineRideCard({required this.summary});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ride = offlineRide.ride;
-    final weather = offlineRide.weather.isEmpty ? null : offlineRide.weather.first;
+    final weather = summary.firstWeather;
 
     return Dismissible(
-      key: ValueKey(ride.id),
+      key: ValueKey(summary.id),
       direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(context, ride.name),
+      confirmDismiss: (_) => _confirmDelete(context, summary.name),
       onDismissed: (_) =>
-          context.read<OfflineRidesProvider>().delete(ride.id),
+          context.read<OfflineRidesProvider>().delete(summary.id),
       background: Container(
         decoration: BoxDecoration(
           color: theme.colorScheme.errorContainer,
@@ -149,8 +147,7 @@ class _OfflineRideCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) =>
-                  OfflineRideDetailScreen(offlineRide: offlineRide),
+              builder: (_) => OfflineRideDetailScreen(rideId: summary.id),
             ),
           ),
           child: Padding(
@@ -171,14 +168,14 @@ class _OfflineRideCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(ride.name,
+                      Text(summary.name,
                           style: theme.textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
                       Text(
-                        '${ride.distanceKm.toStringAsFixed(1)} km · saved '
-                        '${DateFormat.yMMMd().format(offlineRide.savedAt)}',
+                        '${summary.distanceKm.toStringAsFixed(1)} km · saved '
+                        '${DateFormat.yMMMd().format(summary.savedAt)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
                       ),

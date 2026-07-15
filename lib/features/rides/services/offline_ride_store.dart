@@ -35,6 +35,45 @@ class OfflineRide {
   });
 }
 
+/// Just enough of a saved ride to draw one row of the offline list.
+///
+/// Exists so the list doesn't have to open [OfflineRide]s to render: a ride's
+/// `ride.json` carries its entire GPS track (a 200 km recording is ~29k points
+/// across five parallel arrays), and the list shows a name, a distance, a date
+/// and one weather badge. Reading every track to render that was both a long
+/// synchronous decode on the UI thread and — because `OfflineRidesProvider`
+/// lives above the navigator for the whole process — tens of MB pinned in
+/// memory for as long as the app ran.
+///
+/// These fields are denormalised into `meta.json` at save time; see
+/// [OfflineRideStore.listSummaries].
+class OfflineRideSummary {
+  final int id;
+  final String name;
+  final double distanceKm;
+  final DateTime savedAt;
+
+  /// The ride's first forecast point, for the list's weather badge. Null when
+  /// the ride was saved without a forecast.
+  final WeatherPoint? firstWeather;
+
+  const OfflineRideSummary({
+    required this.id,
+    required this.name,
+    required this.distanceKm,
+    required this.savedAt,
+    required this.firstWeather,
+  });
+
+  factory OfflineRideSummary.of(OfflineRide r) => OfflineRideSummary(
+        id: r.ride.id,
+        name: r.ride.name,
+        distanceKm: r.ride.distanceKm,
+        savedAt: r.savedAt,
+        firstWeather: r.weather.isEmpty ? null : r.weather.first,
+      );
+}
+
 /// Persists rides (route + weather) to the app's documents directory so they
 /// can be viewed with no connection. Layout:
 ///
@@ -56,10 +95,30 @@ class OfflineRideStore {
   Future<bool> isSaved(int id) async =>
       File('${(await _rideDir(id)).path}/ride.json').exists();
 
-  /// Writes the ride + weather + notable sections to disk. Throws
-  /// [OfflineSaveException] for a route with no GPS track; leaves nothing
-  /// half-written behind on failure.
-  Future<void> save(
+  /// The contents of `meta.json`: when the ride was saved, plus the handful of
+  /// fields the offline list renders, denormalised so [listSummaries] never has
+  /// to open `ride.json` and its GPS track. See [OfflineRideSummary].
+  Map<String, dynamic> _metaJson({
+    required Ride ride,
+    required List<WeatherPoint> weather,
+    required DateTime savedAt,
+  }) =>
+      {
+        'saved_at': savedAt.toIso8601String(),
+        'id': ride.id,
+        'name': ride.name,
+        'distance_km': ride.distanceKm,
+        'first_weather': weather.isEmpty ? null : weather.first.toJson(),
+      };
+
+  /// Writes the ride + weather + notable sections to disk, returning the
+  /// `savedAt` recorded. Throws [OfflineSaveException] for a route with no GPS
+  /// track; leaves nothing half-written behind on failure.
+  ///
+  /// Returning `savedAt` rather than `void` lets the caller build an
+  /// [OfflineRideSummary] from what it already holds, instead of reading the
+  /// multi-megabyte ride straight back off the disk it just wrote it to.
+  Future<DateTime> save(
     Ride ride,
     List<WeatherPoint> weather,
     List<RideSection> sections,
@@ -70,6 +129,7 @@ class OfflineRideStore {
     }
 
     final dir = await _rideDir(ride.id);
+    final savedAt = DateTime.now();
     try {
       await dir.create(recursive: true);
       await File('${dir.path}/ride.json')
@@ -78,28 +138,75 @@ class OfflineRideStore {
           .writeAsString(jsonEncode([for (final w in weather) w.toJson()]));
       await File('${dir.path}/sections.json')
           .writeAsString(jsonEncode([for (final s in sections) s.toJson()]));
-      await File('${dir.path}/meta.json').writeAsString(jsonEncode({
-        'saved_at': DateTime.now().toIso8601String(),
-      }));
+      await File('${dir.path}/meta.json').writeAsString(
+          jsonEncode(_metaJson(ride: ride, weather: weather, savedAt: savedAt)));
+      return savedAt;
     } catch (_) {
       if (await dir.exists()) await dir.delete(recursive: true);
       rethrow;
     }
   }
 
-  /// All saved rides, newest first. Skips any directory that can't be parsed.
-  Future<List<OfflineRide>> list() async {
+  /// Every saved ride's list-row fields, newest first, read from `meta.json`
+  /// alone — the GPS tracks stay on disk until something actually opens one
+  /// (see [load]). Skips any directory that can't be parsed.
+  Future<List<OfflineRideSummary>> listSummaries() async {
     final root = await _rootDir();
     if (!await root.exists()) return [];
-    final result = <OfflineRide>[];
-    for (final entity in root.listSync()) {
-      if (entity is Directory) {
-        final loaded = await _load(entity);
-        if (loaded != null) result.add(loaded);
-      }
+    final result = <OfflineRideSummary>[];
+    await for (final entity in root.list()) {
+      if (entity is! Directory) continue;
+      final summary = await _summaryOf(entity);
+      if (summary != null) result.add(summary);
     }
     result.sort((a, b) => b.savedAt.compareTo(a.savedAt));
     return result;
+  }
+
+  Future<OfflineRideSummary?> _summaryOf(Directory dir) async {
+    try {
+      final metaFile = File('${dir.path}/meta.json');
+      if (!await metaFile.exists()) return null;
+      final meta =
+          jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
+
+      // A meta.json written before the summary fields existed carries only
+      // saved_at, so there's nothing to render a row from. Fall back to the
+      // slow path once — and rewrite the file while we're here, so this ride
+      // never pays it again.
+      if (meta['name'] == null) return _migrateLegacyMeta(dir);
+
+      return OfflineRideSummary(
+        id: meta['id'] as int,
+        name: meta['name'] as String,
+        distanceKm: (meta['distance_km'] as num).toDouble(),
+        savedAt: DateTime.parse(meta['saved_at'] as String),
+        firstWeather: meta['first_weather'] == null
+            ? null
+            : WeatherPoint.fromJson(
+                meta['first_weather'] as Map<String, dynamic>),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reads a pre-summary ride in full to build its row, then upgrades its
+  /// `meta.json` in place. Best-effort: a failed rewrite just means the next
+  /// listing migrates it again.
+  Future<OfflineRideSummary?> _migrateLegacyMeta(Directory dir) async {
+    final full = await _load(dir);
+    if (full == null) return null;
+    try {
+      await File('${dir.path}/meta.json').writeAsString(jsonEncode(_metaJson(
+        ride: full.ride,
+        weather: full.weather,
+        savedAt: full.savedAt,
+      )));
+    } catch (_) {
+      // Not worth failing the listing over — we already have what we need.
+    }
+    return OfflineRideSummary.of(full);
   }
 
   Future<OfflineRide?> load(int id) async => _load(await _rideDir(id));

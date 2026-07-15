@@ -12,7 +12,12 @@ import '../../../core/models/audax_event.dart';
 /// in-memory only (no disk write), so it naturally disappears when the app
 /// process ends — nothing to explicitly clear.
 class AudaxEventsCacheProvider extends ChangeNotifier {
-  final ApiClient _api = ApiClient.instance;
+  /// Defaults to the real client, so callers say `AudaxEventsCacheProvider()`.
+  /// Tests pass a fake to drive the request orderings the [_generations] guard
+  /// exists for, which are otherwise impossible to stage against a live API.
+  AudaxEventsCacheProvider({ApiClient? api}) : _api = api ?? ApiClient.instance;
+
+  final ApiClient _api;
 
   // --- Filter options (categories/states/cities) — one global resource ----
 
@@ -36,6 +41,9 @@ class AudaxEventsCacheProvider extends ChangeNotifier {
       _filters = await _api.getAudaxEventFilters();
     } on ApiException catch (e) {
       _filtersError = e.message;
+    } catch (_) {
+      // See [fetchFirst] for why `on ApiException` alone isn't enough.
+      _filtersError = "Couldn't load the filter options.";
     } finally {
       _filtersLoading = false;
       notifyListeners();
@@ -55,6 +63,25 @@ class AudaxEventsCacheProvider extends ChangeNotifier {
   final Map<String, bool> _loadingMore = {};
   final Map<String, String?> _firstErrors = {};
   final Map<String, String?> _moreErrors = {};
+
+  /// Bumped by every [fetchFirst] that actually goes out, and captured by each
+  /// in-flight request so a response can tell whether the list it was built
+  /// against still exists. Per key, since each month/filter combo is its own
+  /// independent list and a refresh of one says nothing about the others.
+  ///
+  /// This is `RidesProvider._generation` ported across, and it's here for the
+  /// identical reason: without it, a scroll-triggered [fetchMore] that resolves
+  /// *after* a pull-to-refresh splices page 2 of the old list onto the freshly
+  /// refreshed page 1 — duplicating or dropping events depending on what
+  /// changed server-side — and leaves [_nextUrls] pointing into a list that no
+  /// longer exists, so every later page continues the wrong one.
+  ///
+  /// Cancelling the abandoned request instead would not be enough: cancelling
+  /// is itself a race, so an arriving answer must still be recognised as stale
+  /// and dropped.
+  final Map<String, int> _generations = {};
+
+  int _generationOf(String key) => _generations[key] ?? 0;
 
   /// Builds the cache key for a given month + filter combination. Two calls
   /// with the same inputs always resolve to the same cached entry.
@@ -93,6 +120,7 @@ class AudaxEventsCacheProvider extends ChangeNotifier {
     bool force = false,
   }) async {
     if (!force && (hasFetched(key) || isLoadingFirst(key))) return;
+    final generation = _generations[key] = _generationOf(key) + 1;
     _loadingFirst[key] = true;
     _firstErrors[key] = null;
     notifyListeners();
@@ -105,14 +133,30 @@ class AudaxEventsCacheProvider extends ChangeNotifier {
         state: state,
         category: category,
       );
+      if (generation != _generationOf(key)) return;
       _events[key] = page.results;
       _nextUrls[key] = page.next;
       _moreErrors[key] = null;
     } on ApiException catch (e) {
+      if (generation != _generationOf(key)) return;
       _firstErrors[key] = e.message;
+    } catch (_) {
+      // `on ApiException` alone isn't enough: [ApiClient] only promises an
+      // ApiException for transport failures and non-2xx bodies, so a 200 whose
+      // body isn't the shape this endpoint expects still surfaces as a raw
+      // TypeError. Letting that escape left this key with no events, no error
+      // *and* no spinner — which the screen renders as its "fetch hasn't
+      // started yet" branch: a spinner with no retry and no way out of it.
+      // Whatever went wrong, the rider needs to be able to ask again.
+      if (generation != _generationOf(key)) return;
+      _firstErrors[key] = "Couldn't load these events.";
     } finally {
-      _loadingFirst[key] = false;
-      notifyListeners();
+      // A superseded fetch leaves the flag alone: the newer one set it and
+      // still owns it, so clearing it here would hide its spinner.
+      if (generation == _generationOf(key)) {
+        _loadingFirst[key] = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -122,16 +166,28 @@ class AudaxEventsCacheProvider extends ChangeNotifier {
   Future<void> fetchMore(String key) async {
     final next = _nextUrls[key];
     if (next == null || isLoadingMore(key)) return;
+    final generation = _generationOf(key);
     _loadingMore[key] = true;
     _moreErrors[key] = null;
     notifyListeners();
     try {
       final page = await _api.listAudaxEvents(pageUrl: next);
+      // The list this page was meant to extend has since been replaced, so it
+      // has nowhere to go — appending it now would corrupt the new one, and
+      // moving the cursor would point every later page at the old list.
+      if (generation != _generationOf(key)) return;
       _events[key] = [...?_events[key], ...page.results];
       _nextUrls[key] = page.next;
     } on ApiException catch (e) {
+      if (generation != _generationOf(key)) return;
       _moreErrors[key] = e.message;
+    } catch (_) {
+      if (generation != _generationOf(key)) return;
+      _moreErrors[key] = "Couldn't load more events.";
     } finally {
+      // Unconditional, unlike [fetchFirst]: only one fetchMore per key runs at
+      // a time (the guard above ensures it), so this call always owns the flag
+      // and must release it even when its result was discarded.
       _loadingMore[key] = false;
       notifyListeners();
     }

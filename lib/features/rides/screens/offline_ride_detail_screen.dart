@@ -10,6 +10,7 @@ import '../../../core/services/connectivity_service.dart';
 import '../../../core/widgets/elevation_chart.dart';
 import '../../../core/widgets/route_map.dart';
 import '../../tracking/screens/live_tracking_screen.dart';
+import '../providers/offline_rides_provider.dart';
 import '../services/offline_ride_store.dart';
 import '../widgets/notable_sections_card.dart';
 import 'ride_detail_screen.dart';
@@ -19,9 +20,9 @@ import 'ride_detail_screen.dart';
 /// weather bubbles, stats, the elevation/gradient chart, the frozen weather
 /// forecast, and a Live button (GPS-only, so it works offline).
 class OfflineRideDetailScreen extends StatefulWidget {
-  final OfflineRide offlineRide;
+  final int rideId;
 
-  const OfflineRideDetailScreen({super.key, required this.offlineRide});
+  const OfflineRideDetailScreen({super.key, required this.rideId});
 
   @override
   State<OfflineRideDetailScreen> createState() =>
@@ -32,7 +33,31 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
   ProfileChartMode _chartMode = ProfileChartMode.elevation;
   int? _highlightIndex;
 
-  Ride get _ride => widget.offlineRide.ride;
+  /// The saved ride, read off the disk when this screen opens.
+  ///
+  /// The offline list carries [OfflineRideSummary]s, not rides — so the GPS
+  /// track that the map and the elevation chart draw, and that the notable
+  /// sections navigate with, is loaded here and released again with the screen,
+  /// rather than being held for the life of the app by a provider above the
+  /// navigator.
+  OfflineRide? _offlineRide;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final loaded =
+        await context.read<OfflineRidesProvider>().load(widget.rideId);
+    if (!mounted) return;
+    setState(() {
+      _offlineRide = loaded;
+      _loading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,13 +116,36 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
 
   void _switchToLive(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RideDetailScreen(rideId: _ride.id),
+      builder: (_) => RideDetailScreen(rideId: widget.rideId),
     ));
   }
 
   Widget _buildScaffold(BuildContext context) {
-    final offlineRide = widget.offlineRide;
-    final ride = _ride;
+    final offlineRide = _offlineRide;
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (offlineRide == null) {
+      // The row was built from meta.json, so the directory existed a moment
+      // ago; getting here means the ride itself is missing or unreadable.
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              "Couldn't open this offline copy. Try removing it and saving the "
+              'ride again.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+    final ride = offlineRide.ride;
     final profile = ride.profile;
     final hasTrack = profile != null && profile.latitude.isNotEmpty;
     final weather = offlineRide.weather;

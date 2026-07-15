@@ -78,6 +78,14 @@ class RidesProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (generation != _generation) return;
       error = e.message;
+    } catch (_) {
+      // [ApiClient] only promises an ApiException for transport failures and
+      // non-2xx bodies, so a 200 whose body isn't the shape /rides/ returns
+      // arrives as a raw TypeError. Without this the list stayed empty with no
+      // error set, and the screen rendered "No rides yet" — telling a rider who
+      // has plenty that they have none, which reads as data loss.
+      if (generation != _generation) return;
+      error = "Couldn't load your rides.";
     } finally {
       // A superseded load leaves the flag alone: the newer one set it and
       // still owns it, so clearing it here would hide its spinner.
@@ -104,6 +112,10 @@ class RidesProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       if (generation != _generation) return;
       error = e.message;
+    } catch (_) {
+      // As in [loadFirst].
+      if (generation != _generation) return;
+      error = "Couldn't load more rides.";
     } finally {
       // Unconditional, unlike above: only one loadMore runs at a time (the
       // guard above ensures it), so this call always owns the flag and must
