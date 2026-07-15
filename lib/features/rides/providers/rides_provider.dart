@@ -138,6 +138,14 @@ class RidesProvider extends ChangeNotifier {
     } on ApiException catch (e) {
       error = e.message;
       return null;
+    } catch (_) {
+      // Not everything that can go wrong here is an ApiException: the picked
+      // file can be gone by the time it's read (Android evicts the picker's
+      // cache copy), which arrives as a FileSystemException. Letting it escape
+      // would break this method's contract — "returns null and sets error" —
+      // and stranded the caller's uploading flag with it.
+      error = 'Could not read that file. Please pick it again.';
+      return null;
     } finally {
       // Whichever way it ended, nothing is in flight now — otherwise the bar
       // would sit frozen at 100% until the next upload.

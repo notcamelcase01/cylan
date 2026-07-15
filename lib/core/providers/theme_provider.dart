@@ -15,7 +15,16 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> _load() async {
-    final stored = await _storage.read(key: _key);
+    // Best-effort, like every other read of this store (see [ApiClient.token]):
+    // a keystore that won't answer is not a reason to throw out of a
+    // constructor on every launch. An unreadable preference is just the
+    // default one.
+    String? stored;
+    try {
+      stored = await _storage.read(key: _key);
+    } catch (_) {
+      return; // stays on ThemeMode.system, which is already set
+    }
     _mode = switch (stored) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
@@ -32,7 +41,11 @@ class ThemeProvider extends ChangeNotifier {
       ThemeMode.system => ThemeMode.light,
     };
     notifyListeners();
-    await _storage.write(key: _key, value: _mode.name);
+    try {
+      await _storage.write(key: _key, value: _mode.name);
+    } catch (_) {
+      // The toggle already took effect; it just won't outlive the app.
+    }
   }
 
   /// The icon representing the *current* mode.

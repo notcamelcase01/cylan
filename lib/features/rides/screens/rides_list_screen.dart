@@ -116,13 +116,18 @@ class _RidesListViewState extends State<_RidesListView> {
     if (path == null || !mounted) return;
 
     setState(() => _uploading = true);
-    final ride = await context.read<RidesProvider>().upload(filePath: path);
-    if (!mounted) return;
-    setState(() => _uploading = false);
+    try {
+      final ride = await context.read<RidesProvider>().upload(filePath: path);
+      if (!mounted) return;
 
-    final error = context.read<RidesProvider>().error;
-    if (ride == null && error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      final error = context.read<RidesProvider>().error;
+      if (ride == null && error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      }
+    } finally {
+      // However this ended, the flag has to come back down: it disables the
+      // FAB, which is the only way to start another upload.
+      if (mounted) setState(() => _uploading = false);
     }
   }
 

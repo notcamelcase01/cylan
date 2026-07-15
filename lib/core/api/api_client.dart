@@ -77,8 +77,39 @@ class ApiClient {
   late final Dio _dio;
   String? _token;
 
-  Future<String?> get token async =>
-      _token ??= await _storage.read(key: _tokenKey);
+  /// The stored token, or null when there isn't one — *including* when the
+  /// keystore refuses to hand it over.
+  ///
+  /// Secure storage runs on real devices, and real devices fail: an Android
+  /// keystore restored from backup can no longer decrypt its own entries, and
+  /// iOS declines keychain access before first unlock. Letting that escape
+  /// strands every caller — [AuthProvider.tryAutoLogin] in particular never
+  /// reaches an assignment to `status`, leaving the gate on its spinner with no
+  /// retry and no way out but reinstalling.
+  ///
+  /// A token we can't read is, functionally, no token: answering null lands the
+  /// rider on the login screen, where signing in writes a fresh one.
+  Future<String?> get token async {
+    if (_token != null) return _token;
+    try {
+      return _token = await _storage.read(key: _tokenKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Keeps [value] for this session and tries to persist it. Persistence is
+  /// best-effort for the reasons in [token]: a token we can't write just means
+  /// this session won't survive a restart, which is no reason to fail the
+  /// login that just succeeded.
+  Future<void> _storeToken(String value) async {
+    _token = value;
+    try {
+      await _storage.write(key: _tokenKey, value: value);
+    } catch (_) {
+      // Nothing to tell the rider — they are logged in.
+    }
+  }
 
   Future<bool> get isLoggedIn async => (await token) != null;
 
@@ -179,8 +210,7 @@ class ApiClient {
         ));
     _ensure(response, 200);
     final t = (response.data as Map<String, dynamic>)['token'] as String;
-    _token = t;
-    await _storage.write(key: _tokenKey, value: t);
+    await _storeToken(t);
     return t;
   }
 
@@ -204,14 +234,24 @@ class ApiClient {
         ));
     _ensure(response, 201);
     final decoded = response.data as Map<String, dynamic>;
-    _token = decoded['token'] as String;
-    await _storage.write(key: _tokenKey, value: _token!);
+    await _storeToken(decoded['token'] as String);
     return AppUser.fromJson(decoded);
   }
 
+  /// Drops the token from memory and, best-effort, from disk.
+  ///
+  /// A delete that throws must not strand the caller mid-logout (the profile
+  /// screen awaits this before navigating), so the failure is swallowed — at
+  /// the cost that a keystore this broken may still hold the old entry. It
+  /// can't be presented, though: [token] answers null when a read fails, which
+  /// is the same storage that just failed to delete.
   Future<void> logout() async {
     _token = null;
-    await _storage.delete(key: _tokenKey);
+    try {
+      await _storage.delete(key: _tokenKey);
+    } catch (_) {
+      // See above — nothing useful to do, and nothing worth blocking on.
+    }
   }
 
   Future<AppUser> me() async {

@@ -11,6 +11,12 @@ class LiveTrackingProvider extends ChangeNotifier {
   final LocationService _locationService = LocationService();
   StreamSubscription<Position>? _positionSub;
 
+  /// Whether the screen that owns this has already gone away. [start] waits on
+  /// the OS permission prompt, which the rider can leave sitting open for as
+  /// long as they like — and back out of — so by the time it returns, this
+  /// provider may be long disposed.
+  bool _disposed = false;
+
   LiveTrackingProvider(this.ride);
 
   Position? position;
@@ -30,11 +36,26 @@ class LiveTrackingProvider extends ChangeNotifier {
     try {
       await _locationService.ensureReady();
     } on LocationPermissionDenied catch (e) {
+      if (_disposed) return;
       permissionMessage = e.message;
       isLoading = false;
       notifyListeners();
       return;
+    } catch (_) {
+      // Anything else the platform throws (a geolocator PlatformException, say)
+      // would otherwise escape and leave isLoading pinned true — a spinner the
+      // rider can never get past, on the one screen they're using mid-ride.
+      if (_disposed) return;
+      error = "Couldn't start location tracking. Please try again.";
+      isLoading = false;
+      notifyListeners();
+      return;
     }
+
+    // Subscribing now would open a GPS stream that dispose() has already run
+    // past and will never cancel — it would keep the receiver awake, and keep
+    // draining the battery, for the rest of the process's life.
+    if (_disposed) return;
 
     isLoading = false;
     notifyListeners();
@@ -69,6 +90,7 @@ class LiveTrackingProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _positionSub?.cancel();
     super.dispose();
   }
