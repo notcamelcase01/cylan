@@ -143,6 +143,25 @@ class _InfoPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Sits above the route rather than replacing it: the map is still
+            // worth reading while the receiver searches, and this usually
+            // clears itself.
+            if (provider.gpsMessage != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.location_searching,
+                        color: theme.colorScheme.onSurfaceVariant, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(provider.gpsMessage!,
+                          style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ),
+                  ],
+                ),
+              ),
             if (offRoute)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),

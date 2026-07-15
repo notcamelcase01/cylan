@@ -27,7 +27,10 @@ Line numbers are as of the fixes below.
 | O1 | Unexpected errors stranding the UI | ✅ fixed (mitigation) — full decode refactor still deferred |
 | O2 | Audax cache race guard | ✅ fixed + tested |
 | O3 | Offline rides pinning GPS tracks in RAM | ✅ fixed + tested |
+| O19 | Live GPS feed: no `onError`, silent missing fix | ✅ fixed + tested |
 | O4–O18 | Small / noted | ⬜ open |
+
+Test suite: **17 → 37**. `flutter analyze` clean.
 
 ---
 
@@ -227,7 +230,7 @@ non-ApiException surfaces as an error, not a stuck spinner"). The `_decode`
 refactor above remains the *correct* fix if you're ever already in `ApiClient` —
 this just makes the failure recoverable in the meantime.
 
-### O2. The audax cache is missing the race guard the rides cache has
+### O2. The audax cache is missing the race guard the rides cache has — ✅ fixed
 
 The most interesting finding. `RidesProvider` carries a `_generation` counter
 with a ten-line comment explaining that a `loadMore` landing after a `refresh`
@@ -251,28 +254,113 @@ calls entirely.
   sub-second window you'd have to be trying for.
 - **Consequence:** briefly duplicated/missing event rows; self-corrects on the
   next fetch.
-- **Fix:** port the `_generation` pattern across, keyed per cache key (a
-  `Map<String, int>`), or drop `_nextUrls[key]`/in-flight state on a forced
-  `fetchFirst`. Worth doing next time you touch this file — the asymmetry between
-  two providers that should be twins will bite someone later.
+- **What was done:** the `_generation` pattern ported across as
+  `Map<String, int> _generations`, keyed per cache key — each month/filter combo
+  is its own list, so a refresh of one must not invalidate another's `fetchMore`.
+  `fetchFirst` bumps and captures it; `fetchMore` captures without bumping (it
+  extends a list rather than replacing one), exactly as in `RidesProvider`.
+  `fetchFirst`'s `finally` is conditional (a superseded fetch leaves the flag to
+  the newer one that owns it); `fetchMore`'s is unconditional (only one runs per
+  key at a time). `AudaxEventsCacheProvider` also became injectable
+  (`{ApiClient? api}`), matching `RidesProvider`, because a guard this subtle
+  can't be verified against a live API.
+- **Pinned by** `test/features/audax/audax_events_cache_provider_test.dart`:
+  five race tests mirroring `rides_provider_test.dart` one-for-one, plus one
+  proving a refresh of one key doesn't discard another key's page 2. Each was
+  checked against a deliberately neutered guard first — the splice test fails
+  with `['fresh', 'stale']` instead of `['fresh']` — so they can actually fail.
 
-### O3. Offline rides hold every full GPS track in RAM, permanently
+**Why this one mattered more than its odds suggest:** the guard existing in one
+provider and not its twin is how the codebase teaches its own conventions. The
+next cache someone writes will be copied from whichever they read first.
+
+### O3. Offline rides hold every full GPS track in RAM, permanently — ✅ fixed
 
 `OfflineRidesProvider` is app-scoped in `main.dart` (lives for the whole
-process), and `refresh()` → `OfflineRideStore.list()` (`:91`) fully decodes
-**every** saved ride — including complete `latitude`/`longitude`/`elevationM`/
-`gradientPct` arrays — just to render a list of names and distances.
-
-It's also `listSync()` (`:95`) plus `jsonDecode` of potentially multi-MB files
-**on the UI thread**.
+process), and `refresh()` → `OfflineRideStore.list()` fully decoded **every**
+saved ride — complete `latitude`/`longitude`/`elevationM`/`gradientPct` arrays —
+just to render a list of names and distances. It was also `listSync()` plus
+`jsonDecode` of potentially multi-MB files **on the UI thread**.
 
 - **Likelihood:** deterministic, but scales with saved rides. At 2–3 rides it's
   a few MB and invisible. At 10+ recorded rides (a 200 km ride at 1 Hz is ~29k
   points) it's tens of MB held forever, and a visible hitch opening the list.
-- **Fix:** split the store — write a small `meta.json` (id, name, distance,
-  savedAt, first weather point) and have `list()` read only that; load the full
-  profile lazily in `OfflineRideDetailScreen`. Move the decode off the UI thread
-  with `compute()` if it's still chunky. This also fixes the jank.
+- **What was done:** the store now writes the four fields a list row needs
+  (id, name, distanceKm, savedAt, first weather point) into `meta.json` at save
+  time, and `listSummaries()` reads *only* those. `OfflineRidesProvider.rides`
+  is now `List<OfflineRideSummary>` — a type with no profile on it, so the
+  regression is impossible to reintroduce by accident rather than merely
+  discouraged. The full ride is read by `OfflineRidesProvider.load(id)` when a
+  detail screen opens, and released with that screen. Directory listing moved
+  from `listSync()` to the async `list()`.
+- **Two things fell out of it:** `save()` now returns the `savedAt` it wrote, so
+  the provider builds its new row from what it already holds instead of reading
+  the multi-megabyte ride straight back off the disk it just wrote it to. And
+  `OfflineRideDetailScreen` now takes a `rideId` rather than a loaded
+  `OfflineRide`, matching `RideDetailScreen`.
+
+**The upgrade path was the risky part.** Rides saved by an older build have a
+`meta.json` carrying only `saved_at` — nothing to render a row from. Those fall
+back to reading the ride once and then rewrite their `meta.json` in place, so
+the slow path is paid once per ride rather than forever. Getting this wrong
+would have shown existing users an empty offline list on upgrade, which is
+exactly the silent-breakage pattern this whole document is about — so it is
+tested against a real filesystem (`path_provider` pointed at a temp dir), not a
+fake: `test/features/rides/offline_ride_store_test.dart`.
+
+That suite also pins both constraints you named:
+
+- **"the route must be visible offline"** — `load()` returns the full ride
+  *with* its profile; the offline detail draws `RouteMap` from it. Without a
+  profile the map has nothing to render, so this is asserted directly.
+- **"tapping a notable section must still work"** — the same loaded profile is
+  what `NotableSectionsCard` passes to `SectionDetailScreen`. Only *when* the
+  profile loads changed, never *whether*.
+
+One test proves the point structurally: it saves a ride, **deletes `ride.json`**,
+and asserts the listing still works. If listing still renders with the GPS track
+physically gone from disk, it provably never reads it.
+
+### O19. The live GPS feed had no `onError`, and a fix that never came was silent — ✅ fixed
+
+Found while chasing a real report: `LOCATION UPDATE FAILURE … kCLErrorDomain
+error 0` on macOS.
+
+**That log itself is benign.** `kCLErrorLocationUnknown` (code 0) is Core
+Location saying "no fix right now". geolocator's `didFailWithError` NSLogs it
+and then *explicitly returns* for that code — per Apple's guidance that it's
+transient — so it never becomes a Dart error and never reaches this app:
+
+```objc
+NSLog(@"LOCATION UPDATE FAILURE:" ...);
+if ([error.domain isEqualToString:kCLErrorDomain]
+    && error.code == kCLErrorLocationUnknown) {
+  return;   // swallowed
+}
+if (self.errorHandler) { ... }   // everything else does reach Dart
+```
+
+Two real gaps behind it, though:
+
+1. **No `onError` on the position stream.** Errors geolocator *does* forward
+   become Dart stream errors, and `positionStream().listen(_onPosition)` passed
+   no `onError` — so they went to the zone unhandled while the rider watched a
+   dot that never moved.
+2. **A fix that never arrives is completely silent.** Nothing is emitted,
+   because there's nothing to emit. Worst case of all: no error, no dot, no
+   explanation. Especially likely on a Mac, which has no GPS and triangulates
+   from surrounding wifi it may not recognise.
+
+- **What was done:** an `onError` that records `gpsMessage`, plus a 10-second
+  first-fix timer that says so if nothing has arrived. Both render as a note
+  *over* the map rather than as `error`, which replaces the whole screen —
+  losing the route because the signal dipped under a bridge would be wildly
+  disproportionate. Cleared by the next fix. `LiveTrackingProvider` also became
+  injectable (`{LocationService? locationService}`).
+- **Pinned by** `test/features/tracking/live_tracking_provider_test.dart`,
+  which also — finally — pins **F4**: the leak test drives dispose-during-the-
+  permission-prompt and asserts nothing ever subscribes. Verified against a
+  neutered guard, so it can fail.
 
 ---
 
@@ -416,10 +504,9 @@ given it's explicitly best-effort cleanup; worth knowing.
 
 | Tier | Items |
 |---|---|
-| Fixed | F1 keystore brick, F2 theme throw, F3 stuck FAB, F4 GPS leak + live spinner |
-| Worth doing deliberately | O2 audax race guard, O3 offline memory |
-| Cheap, high value-per-line | O1's mitigation (retry instead of a dead-end spinner), O4–O10 |
-| Noted, likely ignore | O1's full refactor, O11–O18 |
+| Fixed | F1 keystore brick, F2 theme throw, F3 stuck FAB, F4 GPS leak + live spinner, O1 mitigation, O2 race guard, O3 offline memory, O19 GPS feed feedback |
+| Still open, cheap | O4–O10 |
+| Noted, likely ignore | O1's full `_decode` refactor, O11–O18 |
 
 **On O1 specifically:** it led this list in the first draft and has since been
 downgraded twice, both times by checking a claim instead of asserting it (the

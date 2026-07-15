@@ -57,6 +57,9 @@ dev_dependencies:
   # so it can exercise real on-disk reads/writes (and the legacy-format
   # migration) instead of a fake.
   path_provider_platform_interface: ^2.1.3
+  # Test-only: lets live_tracking_provider_test fast-forward the wait for a
+  # first location fix instead of really sitting there for ten seconds.
+  fake_async: ^1.3.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
