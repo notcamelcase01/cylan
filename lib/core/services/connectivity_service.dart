@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../api/api_client.dart';
 
@@ -44,17 +43,9 @@ class ConnectivityService extends ChangeNotifier {
 
   /// A single HEAD request to the API base. We don't care about the status
   /// code — merely getting a response means we reached the server over the
-  /// internet; a [SocketException]/timeout means we didn't.
-  Future<bool> _serverReachable() async {
-    try {
-      await http
-          .head(Uri.parse(ApiClient.baseUrl))
-          .timeout(_pingTimeout);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  /// internet; a transport failure or timeout means we didn't.
+  Future<bool> _serverReachable() =>
+      ApiClient.instance.reachable(timeout: _pingTimeout);
 
   void _setOnline(bool value) {
     if (value != _online) {

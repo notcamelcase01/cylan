@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/models/audax_event.dart';
 import '../providers/audax_events_cache_provider.dart';
 import '../widgets/audax_category.dart';
+import '../widgets/audax_registration_status.dart';
 
 /// Browse the public Audax India brevet calendar. The server only ever
 /// answers for a single calendar month at a time (defaults to the current
@@ -23,6 +26,12 @@ class AudaxEventsScreen extends StatefulWidget {
 
 class _AudaxEventsScreenState extends State<AudaxEventsScreen> {
   final _scrollController = ScrollController();
+
+  /// Pending month fetch, held back while the rider is still stepping. Long
+  /// enough to swallow a burst of taps, short enough not to feel like lag on a
+  /// single one.
+  static const _monthFetchDelay = Duration(milliseconds: 350);
+  Timer? _monthFetchTimer;
 
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   bool _upcomingOnly = false;
@@ -57,11 +66,17 @@ class _AudaxEventsScreenState extends State<AudaxEventsScreen> {
 
   @override
   void dispose() {
+    _monthFetchTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _fetchCurrent({bool force = false}) {
+    // Any fetch asked for outright — first open, Apply, pull-to-refresh —
+    // supersedes one merely pending, which by now is for this same month
+    // anyway. (No-op when called from the timer's own callback: a timer that
+    // has already fired ignores cancel.)
+    _monthFetchTimer?.cancel();
     return context.read<AudaxEventsCacheProvider>().fetchFirst(
           _key,
           year: _selectedMonth.year,
@@ -74,11 +89,26 @@ class _AudaxEventsScreenState extends State<AudaxEventsScreen> {
         );
   }
 
+  /// Moves to [month] and schedules its fetch.
+  ///
+  /// The label moves *now* and only the network call waits, so the arrows stay
+  /// responsive — stepping past five months fires one request for where the
+  /// rider lands, not five for months they only glanced at. Never sending a
+  /// request beats sending then cancelling one: it spares the rider's data and
+  /// the server the work, which is worth caring about on mobile at a roadside.
+  ///
+  /// Months already cached don't wait on this: [_buildBody] reads them
+  /// straight out of the cache, and the delayed [_fetchCurrent] finds them
+  /// fetched and does nothing.
   void _selectMonth(DateTime month) {
     final normalized = DateTime(month.year, month.month);
     if (normalized == _selectedMonth) return;
     setState(() => _selectedMonth = normalized);
-    _fetchCurrent();
+    _monthFetchTimer?.cancel();
+    _monthFetchTimer = Timer(_monthFetchDelay, () {
+      if (!mounted) return;
+      _fetchCurrent();
+    });
   }
 
   Future<void> _pickMonth() async {
@@ -475,12 +505,12 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   label: Text(audaxCategoryLabel(c)),
                   selected: _category == c,
                   labelStyle: TextStyle(
-                    color: audaxCategoryInk(context, audaxCategoryColor(c)),
+                    color: audaxBadgeInk(context, audaxCategoryColor(c)),
                     fontWeight: FontWeight.w600,
                   ),
                   backgroundColor:
-                      audaxCategoryFill(context, audaxCategoryColor(c)),
-                  selectedColor: audaxCategoryFill(context, audaxCategoryColor(c)),
+                      audaxBadgeFill(context, audaxCategoryColor(c)),
+                  selectedColor: audaxBadgeFill(context, audaxCategoryColor(c)),
                   side: BorderSide(
                     color: audaxCategoryColor(c).withValues(
                       alpha: _category == c ? 0.9 : 0.0,
@@ -703,7 +733,8 @@ class _AudaxEventCard extends StatelessWidget {
     final feeFmt = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
     final seed = audaxCategoryColor(event.category);
-    final accent = audaxCategoryInk(context, seed);
+    final accent = audaxBadgeInk(context, seed);
+    final registration = audaxRegistrationStatus(event);
 
     return Card(
       // A whisper of the category colour over the normal card surface — enough
@@ -728,6 +759,8 @@ class _AudaxEventCard extends StatelessWidget {
               Row(
                 children: [
                   AudaxCategoryBadge(category: event.category),
+                  const SizedBox(width: 6),
+                  AudaxRegistrationBadge(status: registration),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -767,7 +800,9 @@ class _AudaxEventCard extends StatelessWidget {
                 icon: Icons.how_to_reg_outlined,
                 label: event.registrationCloseDate == null
                     ? 'Registration closes: TBA'
-                    : 'Registration closes ${dateFmt.format(event.registrationCloseDate!)}',
+                    : audaxDateHasPassed(event.registrationCloseDate!)
+                        ? 'Registration closed ${dateFmt.format(event.registrationCloseDate!)}'
+                        : 'Registration closes ${dateFmt.format(event.registrationCloseDate!)}',
               ),
               const SizedBox(height: 4),
               _InfoRow(

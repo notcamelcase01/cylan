@@ -7,7 +7,12 @@ import '../../../core/models/ride.dart';
 enum RideSort { newest, nameAsc, distanceAsc, distanceDesc }
 
 class RidesProvider extends ChangeNotifier {
-  final ApiClient _api = ApiClient.instance;
+  /// Defaults to the real client, so callers say `RidesProvider()`. Tests pass
+  /// a fake to drive the request orderings the [_generation] guard exists for,
+  /// which are otherwise impossible to stage against a live API.
+  RidesProvider({ApiClient? api}) : _api = api ?? ApiClient.instance;
+
+  final ApiClient _api;
 
   List<Ride> _rides = [];
   String? _nextUrl;
@@ -15,6 +20,18 @@ class RidesProvider extends ChangeNotifier {
   bool isLoadingMore = false;
   String? error;
   RideSort sort = RideSort.newest;
+
+  /// Bumped by every [loadFirst], and captured by each in-flight request so a
+  /// response can tell whether the list it was built against still exists.
+  ///
+  /// Cancelling the abandoned request instead would not be enough: cancelling
+  /// is itself a race — the response can already be decoded and queued by the
+  /// time the cancel lands — so an arriving answer must still be recognised as
+  /// stale and dropped. Without this, a scroll-triggered [loadMore] that
+  /// resolves *after* a pull-to-refresh splices page 2 of the old list onto
+  /// the freshly refreshed page 1, duplicating or dropping rides depending on
+  /// what changed server-side.
+  int _generation = 0;
 
   bool get hasMore => _nextUrl != null;
 
@@ -44,33 +61,53 @@ class RidesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Loads (or reloads) page 1, replacing the list. Starting one invalidates
+  /// every request already in flight — including a concurrent [loadFirst], so
+  /// two overlapping refreshes settle on the newer answer rather than
+  /// whichever happens to land last.
   Future<void> loadFirst() async {
+    final generation = ++_generation;
     isLoading = true;
     error = null;
     notifyListeners();
     try {
       final page = await _api.listRides();
+      if (generation != _generation) return;
       _rides = page.results;
       _nextUrl = page.next;
     } on ApiException catch (e) {
+      if (generation != _generation) return;
       error = e.message;
     } finally {
-      isLoading = false;
-      notifyListeners();
+      // A superseded load leaves the flag alone: the newer one set it and
+      // still owns it, so clearing it here would hide its spinner.
+      if (generation == _generation) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> loadMore() async {
     if (!hasMore || isLoadingMore) return;
+    final generation = _generation;
+    final next = _nextUrl;
     isLoadingMore = true;
     notifyListeners();
     try {
-      final page = await _api.listRides(pageUrl: _nextUrl);
+      final page = await _api.listRides(pageUrl: next);
+      // The list this page was meant to extend has since been replaced, so
+      // it has nowhere to go — appending it now would corrupt the new one.
+      if (generation != _generation) return;
       _rides = [..._rides, ...page.results];
       _nextUrl = page.next;
     } on ApiException catch (e) {
+      if (generation != _generation) return;
       error = e.message;
     } finally {
+      // Unconditional, unlike above: only one loadMore runs at a time (the
+      // guard above ensures it), so this call always owns the flag and must
+      // release it even when its result was discarded.
       isLoadingMore = false;
       notifyListeners();
     }
@@ -78,17 +115,34 @@ class RidesProvider extends ChangeNotifier {
 
   Future<void> refresh() => loadFirst();
 
+  /// Fraction of the current upload that has been sent (0-1), or null when
+  /// nothing is uploading or the file's total size isn't known.
+  double? uploadProgress;
+
   Future<Ride?> upload({required String filePath, String? name}) async {
     error = null;
+    uploadProgress = null;
     try {
-      final ride = await _api.uploadRide(filePath: filePath, name: name);
+      final ride = await _api.uploadRide(
+        filePath: filePath,
+        name: name,
+        onProgress: (sent, total) {
+          // total is -1 when the length isn't known up front; leave the bar
+          // indeterminate rather than inventing a number.
+          uploadProgress = total > 0 ? sent / total : null;
+          notifyListeners();
+        },
+      );
       _rides = [ride, ..._rides];
-      notifyListeners();
       return ride;
     } on ApiException catch (e) {
       error = e.message;
-      notifyListeners();
       return null;
+    } finally {
+      // Whichever way it ended, nothing is in flight now — otherwise the bar
+      // would sit frozen at 100% until the next upload.
+      uploadProgress = null;
+      notifyListeners();
     }
   }
 

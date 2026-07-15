@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/audax_event.dart';
 import '../models/ride.dart';
@@ -13,9 +13,45 @@ import '../models/user.dart';
 import '../models/weather_point.dart';
 import 'api_exception.dart';
 
+/// The one place the app talks to the network. Everything above this line
+/// deals in models and [ApiException] and knows nothing about HTTP — Dio is an
+/// implementation detail that stops here, which is why the progress callback
+/// on [uploadRide] is a plain function type rather than Dio's `ProgressCallback`.
 class ApiClient {
-  ApiClient._();
+  ApiClient._({HttpClientAdapter? adapter}) {
+    _dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: _requestTimeout,
+      receiveTimeout: _requestTimeout,
+      // Status codes are turned into messages by [_throwForResponse], which
+      // needs the decoded error body to do it — so let every response through
+      // rather than letting Dio throw before we've read it.
+      validateStatus: (_) => true,
+    ));
+    if (adapter != null) _dio.httpClientAdapter = adapter;
+    // Auth as an interceptor rather than at each call site: it's one rule
+    // ("send the token if we have one"), and 25 endpoints shouldn't each have
+    // to remember it.
+    _dio.interceptors.add(
+      InterceptorsWrapper(onRequest: (options, handler) async {
+        if (options.extra[_anonymous] != true) {
+          final t = await token;
+          if (t != null) options.headers['Authorization'] = 'Token $t';
+        }
+        handler.next(options);
+      }),
+    );
+  }
+
   static final ApiClient instance = ApiClient._();
+
+  /// A client whose transport answers from [adapter] instead of the network,
+  /// wired up otherwise exactly like [instance] — same timeouts, same auth
+  /// interceptor, same status handling — so a test exercises the real thing.
+  /// Separate from [instance] so cases can't leak into each other.
+  @visibleForTesting
+  factory ApiClient.forTests(HttpClientAdapter adapter) =>
+      ApiClient._(adapter: adapter);
 
   static const String baseUrl = 'https://cyclingngin.duckdns.org/api';
 
@@ -25,9 +61,20 @@ class ApiClient {
   static const _requestTimeout = Duration(seconds: 20);
   static const _uploadTimeout = Duration(seconds: 90);
 
+  /// Marks a request that must go out with **no** `Authorization` header.
+  ///
+  /// Not merely an optimisation: DRF authenticates before it checks
+  /// permissions, so presenting a stale token to a public endpoint (the audax
+  /// calendar) turns a perfectly good 200 into a 401. Login/signup are where a
+  /// token is obtained, not presented.
+  static const _anonymous = 'anonymous';
+  static Options get _anonymousOptions =>
+      Options(extra: const {_anonymous: true});
+
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'auth_token';
 
+  late final Dio _dio;
   String? _token;
 
   Future<String?> get token async =>
@@ -35,71 +82,68 @@ class ApiClient {
 
   Future<bool> get isLoggedIn async => (await token) != null;
 
-  Future<Map<String, String>> _headers({bool json = true}) async {
-    final t = await token;
-    return {
-      if (json) 'Content-Type': 'application/json',
-      if (t != null) 'Authorization': 'Token $t',
-    };
-  }
-
-  /// Runs an HTTP call, applies a timeout, and converts any transport-level
-  /// failure (no connection, DNS failure, dropped socket, timeout) into an
-  /// [ApiException]. Without this, those errors aren't [ApiException] and
-  /// slip past every `on ApiException catch` in the app, leaving a screen
-  /// stuck with a stopped spinner and no message shown.
-  Future<http.Response> _send(
-    Future<http.Response> Function() request, {
-    Duration timeout = _requestTimeout,
-  }) async {
+  /// Runs a Dio call and converts any transport-level failure (no connection,
+  /// DNS failure, dropped socket, timeout) into an [ApiException]. Without
+  /// this, those errors arrive as [DioException] and slip past every
+  /// `on ApiException catch` in the app, leaving a screen stuck with a stopped
+  /// spinner and no message shown.
+  Future<Response<dynamic>> _send(
+    Future<Response<dynamic>> Function() request,
+  ) async {
     try {
-      return await request().timeout(timeout);
-    } on TimeoutException {
-      throw ApiException('The request timed out. Check your connection and try again.');
-    } on SocketException {
-      throw ApiException('Could not reach the server. Check your connection and try again.');
-    } on http.ClientException {
-      throw ApiException('Could not reach the server. Check your connection and try again.');
-    } on ApiException {
-      rethrow;
-    } catch (_) {
-      throw ApiException('Something went wrong. Please try again.');
+      return await request();
+    } on DioException catch (e) {
+      throw _asApiException(e);
     }
   }
 
-  /// Same as [_send] but for a [http.MultipartRequest] (file upload), which
-  /// returns a [http.StreamedResponse] instead of a plain [http.Response].
-  Future<http.StreamedResponse> _sendMultipart(
-    http.MultipartRequest request, {
-    Duration timeout = _uploadTimeout,
-  }) async {
-    try {
-      return await request.send().timeout(timeout);
-    } on TimeoutException {
-      throw ApiException('The upload timed out. Check your connection and try again.');
-    } on SocketException {
-      throw ApiException('Could not reach the server. Check your connection and try again.');
-    } on http.ClientException {
-      throw ApiException('Could not reach the server. Check your connection and try again.');
-    } on ApiException {
-      rethrow;
-    } catch (_) {
-      throw ApiException('Something went wrong. Please try again.');
+  /// Note every branch leaves [ApiException.statusCode] null — by definition
+  /// none of these reached the server, which is exactly what callers read that
+  /// field to find out.
+  ApiException _asApiException(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        // An upload is the only thing that sends a FormData body, and it gets
+        // its own wording to match its much longer budget.
+        return ApiException(e.requestOptions.data is FormData
+            ? 'The upload timed out. Check your connection and try again.'
+            : 'The request timed out. Check your connection and try again.');
+      case DioExceptionType.connectionError:
+      case DioExceptionType.badCertificate:
+        return ApiException(
+            'Could not reach the server. Check your connection and try again.');
+      case DioExceptionType.cancel:
+      case DioExceptionType.badResponse:
+      case DioExceptionType.transformTimeout:
+      case DioExceptionType.unknown:
+        if (e.error is SocketException) {
+          return ApiException(
+              'Could not reach the server. Check your connection and try again.');
+        }
+        return ApiException('Something went wrong. Please try again.');
     }
   }
 
-  Never _throwForResponse(http.BaseResponse response, String body) {
-    Map<String, dynamic>? decoded;
-    try {
-      decoded = jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
-      throw ApiException(
-        'Unexpected server error (${response.statusCode}).',
-        statusCode: response.statusCode,
-      );
+  /// Throws an [ApiException] built from the body unless the response carries
+  /// [expected].
+  void _ensure(Response<dynamic> response, int expected) {
+    if (response.statusCode != expected) _throwForResponse(response);
+  }
+
+  Never _throwForResponse(Response<dynamic> response) {
+    final status = response.statusCode;
+    final data = response.data;
+    // A non-JSON body means something upstream broke (a proxy's HTML error
+    // page, say) — there's no field detail to mine, so report the bare code.
+    if (data is! Map) {
+      throw ApiException('Unexpected server error ($status).',
+          statusCode: status);
     }
+    final decoded = data.cast<String, dynamic>();
     if (decoded.containsKey('detail')) {
-      throw ApiException(decoded['detail'] as String);
+      throw ApiException(decoded['detail'].toString(), statusCode: status);
     }
     final fieldErrors = <String, List<String>>{};
     decoded.forEach((key, value) {
@@ -109,23 +153,32 @@ class ApiClient {
     });
     final message = fieldErrors.values.expand((v) => v).join('\n');
     throw ApiException(
-      message.isEmpty ? 'Request failed (${response.statusCode}).' : message,
+      message.isEmpty ? 'Request failed ($status).' : message,
       fieldErrors: fieldErrors,
-      statusCode: response.statusCode,
+      statusCode: status,
     );
   }
 
-  Future<String> login(String username, String password) async {
-    final response = await _send(() => http.post(
-      Uri.parse('$baseUrl/auth/token/'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
-    ));
-    if (response.statusCode != 200) {
-      _throwForResponse(response, response.body);
+  /// Whether the API is reachable right now. Any HTTP response counts — this
+  /// tests the path to the server, not the health of an endpoint — so only a
+  /// transport failure or [timeout] answers false.
+  Future<bool> reachable({Duration timeout = const Duration(seconds: 5)}) async {
+    try {
+      await _dio.head<void>(baseUrl, options: _anonymousOptions).timeout(timeout);
+      return true;
+    } catch (_) {
+      return false;
     }
-    final t =
-        (jsonDecode(response.body) as Map<String, dynamic>)['token'] as String;
+  }
+
+  Future<String> login(String username, String password) async {
+    final response = await _send(() => _dio.post<dynamic>(
+          '/auth/token/',
+          data: {'username': username, 'password': password},
+          options: _anonymousOptions,
+        ));
+    _ensure(response, 200);
+    final t = (response.data as Map<String, dynamic>)['token'] as String;
     _token = t;
     await _storage.write(key: _tokenKey, value: t);
     return t;
@@ -139,18 +192,18 @@ class ApiClient {
     String? name,
     String? email,
   }) async {
-    final response = await _send(() => http.post(
-      Uri.parse('$baseUrl/auth/signup/'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-        if (name != null && name.isNotEmpty) 'name': name,
-        if (email != null && email.isNotEmpty) 'email': email,
-      }),
-    ));
-    if (response.statusCode != 201) _throwForResponse(response, response.body);
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final response = await _send(() => _dio.post<dynamic>(
+          '/auth/signup/',
+          data: {
+            'username': username,
+            'password': password,
+            if (name != null && name.isNotEmpty) 'name': name,
+            if (email != null && email.isNotEmpty) 'email': email,
+          },
+          options: _anonymousOptions,
+        ));
+    _ensure(response, 201);
+    final decoded = response.data as Map<String, dynamic>;
     _token = decoded['token'] as String;
     await _storage.write(key: _tokenKey, value: _token!);
     return AppUser.fromJson(decoded);
@@ -162,87 +215,83 @@ class ApiClient {
   }
 
   Future<AppUser> me() async {
-    final response = await _send(() async => http.get(
-      Uri.parse('$baseUrl/auth/me/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() => _dio.get<dynamic>('/auth/me/'));
+    _ensure(response, 200);
+    return AppUser.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Updates the rider's optional profile fields (name / email).
   Future<AppUser> updateProfile({String? name, String? email}) async {
-    final response = await _send(() async => http.patch(
-      Uri.parse('$baseUrl/auth/me/'),
-      headers: await _headers(),
-      body: jsonEncode({
-        'name': ?name,
-        'email': ?email,
-      }),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return AppUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() => _dio.patch<dynamic>(
+          '/auth/me/',
+          data: {'name': ?name, 'email': ?email},
+        ));
+    _ensure(response, 200);
+    return AppUser.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// [pageUrl] is an absolute `next`/`previous` URL from a prior page; Dio
+  /// leaves an absolute path alone rather than pasting it onto [baseUrl].
   Future<RidePage> listRides({String? pageUrl}) async {
-    final uri = Uri.parse(pageUrl ?? '$baseUrl/rides/');
-    final response = await _send(() async => http.get(uri, headers: await _headers()));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return RidePage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() => _dio.get<dynamic>(pageUrl ?? '/rides/'));
+    _ensure(response, 200);
+    return RidePage.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<Ride> getRide(int id) async {
-    final response = await _send(() async => http.get(
-      Uri.parse('$baseUrl/rides/$id/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() => _dio.get<dynamic>('/rides/$id/'));
+    _ensure(response, 200);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<Ride> uploadRide({required String filePath, String? name}) async {
-    final uri = Uri.parse('$baseUrl/rides/');
-    final request = http.MultipartRequest('POST', uri);
-    final t = await token;
-    if (t != null) request.headers['Authorization'] = 'Token $t';
-    if (name != null && name.isNotEmpty) request.fields['name'] = name;
-    request.files.add(await http.MultipartFile.fromPath('file', filePath));
-
-    final streamed = await _sendMultipart(request);
-    final body = await streamed.stream.bytesToString();
-    if (streamed.statusCode != 201) _throwForResponse(streamed, body);
-    return Ride.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  /// Uploads a route file.
+  ///
+  /// [onProgress] reports `(bytesSent, totalBytes)` as it goes, so a rider
+  /// pushing a multi-megabyte ride over cellular can watch it move rather than
+  /// stare at a spinner for up to [_uploadTimeout]. `totalBytes` is -1 when the
+  /// length isn't known up front.
+  Future<Ride> uploadRide({
+    required String filePath,
+    String? name,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final formData = FormData.fromMap({
+      if (name != null && name.isNotEmpty) 'name': name,
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final response = await _send(() => _dio.post<dynamic>(
+          '/rides/',
+          data: formData,
+          options: Options(
+            sendTimeout: _uploadTimeout,
+            receiveTimeout: _uploadTimeout,
+          ),
+          onSendProgress: onProgress,
+        ));
+    _ensure(response, 201);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<Ride> renameRide(int id, String name) async {
-    final response = await _send(() async => http.patch(
-      Uri.parse('$baseUrl/rides/$id/'),
-      headers: await _headers(),
-      body: jsonEncode({'name': name}),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(
+        () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}));
+    _ensure(response, 200);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Recomputes the ride's elevation/gradient profile with a new smoothing
   /// window (50-500 m): wider flattens more GPS noise, narrower preserves
   /// more detail (and more noise).
   Future<Ride> setSmoothing(int id, int windowM) async {
-    final response = await _send(() async => http.post(
-      Uri.parse('$baseUrl/rides/$id/smoothing/'),
-      headers: await _headers(),
-      body: jsonEncode({'window_m': windowM}),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return Ride.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() =>
+        _dio.post<dynamic>('/rides/$id/smoothing/', data: {'window_m': windowM}));
+    _ensure(response, 200);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> deleteRide(int id) async {
-    final response = await _send(() async => http.delete(
-      Uri.parse('$baseUrl/rides/$id/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 204) _throwForResponse(response, response.body);
+    final response = await _send(() => _dio.delete<dynamic>('/rides/$id/'));
+    _ensure(response, 204);
   }
 
   Future<List<WeatherPoint>> getWeather(
@@ -251,12 +300,12 @@ class ApiClient {
     required DateTime finish,
   }) async {
     String iso(DateTime dt) => dt.toIso8601String().split('.').first;
-    final uri = Uri.parse(
-      '$baseUrl/rides/$id/weather/',
-    ).replace(queryParameters: {'start': iso(start), 'finish': iso(finish)});
-    final response = await _send(() async => http.get(uri, headers: await _headers()));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return (jsonDecode(response.body) as List<dynamic>)
+    final response = await _send(() => _dio.get<dynamic>(
+          '/rides/$id/weather/',
+          queryParameters: {'start': iso(start), 'finish': iso(finish)},
+        ));
+    _ensure(response, 200);
+    return (response.data as List<dynamic>)
         .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -265,12 +314,10 @@ class ApiClient {
   /// server. Each is self-contained (carries its own coordinates); the app
   /// only displays them. Returns an empty list for a ride with none.
   Future<List<RideSection>> getSections(int id) async {
-    final response = await _send(() async => http.get(
-      Uri.parse('$baseUrl/rides/$id/sections/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final response =
+        await _send(() => _dio.get<dynamic>('/rides/$id/sections/'));
+    _ensure(response, 200);
+    final decoded = response.data as Map<String, dynamic>;
     return (decoded['sections'] as List<dynamic>? ?? [])
         .map((e) => RideSection.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -281,32 +328,21 @@ class ApiClient {
   /// Returns the browser consent URL to open. Its signed `state` carries the
   /// user id so the web callback can link Strava without a web session.
   Future<String> stravaAuthorizeUrl() async {
-    final response = await _send(() async => http.post(
-      Uri.parse('$baseUrl/strava/authorize/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return (jsonDecode(response.body) as Map<String, dynamic>)['authorize_url']
-        as String;
+    final response = await _send(() => _dio.post<dynamic>('/strava/authorize/'));
+    _ensure(response, 200);
+    return (response.data as Map<String, dynamic>)['authorize_url'] as String;
   }
 
   Future<bool> stravaConnected() async {
-    final response = await _send(() async => http.get(
-      Uri.parse('$baseUrl/strava/status/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return (jsonDecode(response.body) as Map<String, dynamic>)['connected']
-        as bool;
+    final response = await _send(() => _dio.get<dynamic>('/strava/status/'));
+    _ensure(response, 200);
+    return (response.data as Map<String, dynamic>)['connected'] as bool;
   }
 
   Future<List<StravaRoute>> stravaRoutes() async {
-    final response = await _send(() async => http.get(
-      Uri.parse('$baseUrl/strava/routes/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return (jsonDecode(response.body) as List<dynamic>)
+    final response = await _send(() => _dio.get<dynamic>('/strava/routes/'));
+    _ensure(response, 200);
+    return (response.data as List<dynamic>)
         .map((e) => StravaRoute.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -317,23 +353,20 @@ class ApiClient {
     List<StravaRoute> routes, {
     bool disconnect = true,
   }) async {
-    final response = await _send(
-      () async => http.post(
-        Uri.parse('$baseUrl/strava/import/'),
-        headers: await _headers(),
-        body: jsonEncode({
-          'routes': [
-            for (final r in routes) {'id': r.id, 'name': r.name},
-          ],
-          'disconnect': disconnect,
-        }),
-      ),
-      // A batch import can take longer than a plain request if several
-      // routes are fetched from Strava and re-parsed server-side.
-      timeout: _uploadTimeout,
-    );
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final response = await _send(() => _dio.post<dynamic>(
+          '/strava/import/',
+          data: {
+            'routes': [
+              for (final r in routes) {'id': r.id, 'name': r.name},
+            ],
+            'disconnect': disconnect,
+          },
+          // A batch import can take longer than a plain request if several
+          // routes are fetched from Strava and re-parsed server-side.
+          options: Options(receiveTimeout: _uploadTimeout),
+        ));
+    _ensure(response, 200);
+    final decoded = response.data as Map<String, dynamic>;
     return StravaImportResult(
       imported: (decoded['imported'] as List<dynamic>)
           .map((e) => Ride.fromJson(e as Map<String, dynamic>))
@@ -345,20 +378,18 @@ class ApiClient {
   }
 
   Future<void> stravaDisconnect() async {
-    final response = await _send(() async => http.post(
-      Uri.parse('$baseUrl/strava/disconnect/'),
-      headers: await _headers(),
-    ));
-    if (response.statusCode != 204) _throwForResponse(response, response.body);
+    final response = await _send(() => _dio.post<dynamic>('/strava/disconnect/'));
+    _ensure(response, 204);
   }
 
   // --- Audax events ------------------------------------------------------
 
   /// Public brevet calendar, always scoped to a single month (defaults to the
-  /// current one when [month]/[year] are omitted). No auth header needed —
-  /// the endpoint is `AllowAny`. Pass [pageUrl] (a `next`/`previous` URL from
-  /// a prior page, which already carries whatever filters were sent) to page
-  /// through results without resending the other filter params.
+  /// current one when [month]/[year] are omitted). Sent anonymously — the
+  /// endpoint is `AllowAny`, and see [_anonymous] for why a token would
+  /// actively hurt. Pass [pageUrl] (a `next`/`previous` URL from a prior page,
+  /// which already carries whatever filters were sent) to page through results
+  /// without resending the other filter params.
   Future<AudaxEventPage> listAudaxEvents({
     String? pageUrl,
     int? month,
@@ -368,29 +399,32 @@ class ApiClient {
     String? state,
     String? category,
   }) async {
-    final uri = pageUrl != null
-        ? Uri.parse(pageUrl)
-        : Uri.parse('$baseUrl/audax-events/').replace(queryParameters: {
-            if (month != null) 'month': '$month',
-            if (year != null) 'year': '$year',
-            if (upcoming != null) 'upcoming': '$upcoming',
-            if (city != null && city.isNotEmpty) 'city': city,
-            if (state != null && state.isNotEmpty) 'state': state,
-            if (category != null && category.isNotEmpty) 'category': category,
-          });
-    final response = await _send(() async => http.get(uri));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return AudaxEventPage.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() => pageUrl != null
+        ? _dio.get<dynamic>(pageUrl, options: _anonymousOptions)
+        : _dio.get<dynamic>(
+            '/audax-events/',
+            queryParameters: {
+              if (month != null) 'month': '$month',
+              if (year != null) 'year': '$year',
+              if (upcoming != null) 'upcoming': '$upcoming',
+              if (city != null && city.isNotEmpty) 'city': city,
+              if (state != null && state.isNotEmpty) 'state': state,
+              if (category != null && category.isNotEmpty) 'category': category,
+            },
+            options: _anonymousOptions,
+          ));
+    _ensure(response, 200);
+    return AudaxEventPage.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// Category/state/city values currently in use, computed live from the same
   /// data the list endpoint reads — build filter UI from this rather than
   /// hardcoding a list. Not paginated, no query params, no auth needed.
   Future<AudaxEventFilters> getAudaxEventFilters() async {
-    final response =
-        await _send(() async => http.get(Uri.parse('$baseUrl/audax-events/filters/')));
-    if (response.statusCode != 200) _throwForResponse(response, response.body);
-    return AudaxEventFilters.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final response = await _send(() =>
+        _dio.get<dynamic>('/audax-events/filters/', options: _anonymousOptions));
+    _ensure(response, 200);
+    return AudaxEventFilters.fromJson(response.data as Map<String, dynamic>);
   }
 }
 

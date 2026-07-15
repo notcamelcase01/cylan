@@ -65,13 +65,13 @@ class AudaxCategoryBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: audaxCategoryFill(context, seed),
+        color: audaxBadgeFill(context, seed),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         audaxCategoryLabel(category),
         style: TextStyle(
-          color: audaxCategoryInk(context, seed),
+          color: audaxBadgeInk(context, seed),
           fontWeight: FontWeight.w700,
           fontSize: 11,
           letterSpacing: 0.2,
@@ -83,14 +83,17 @@ class AudaxCategoryBadge extends StatelessWidget {
 
 /// Background tint for [seed] that keeps its hue readable in both themes —
 /// the raw colours are tuned for light surfaces and turn muddy on dark ones.
-Color audaxCategoryFill(BuildContext context, Color seed) {
+///
+/// Nothing here is category-specific: the registration badge seeds it with a
+/// status colour so both pills get identical treatment.
+Color audaxBadgeFill(BuildContext context, Color seed) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return seed.withValues(alpha: dark ? 0.26 : 0.15);
 }
 
-/// Foreground colour for text/icons drawn on [audaxCategoryFill]: darkened on
+/// Foreground colour for text/icons drawn on [audaxBadgeFill]: darkened on
 /// light backgrounds, lightened on dark ones, so contrast holds either way.
-Color audaxCategoryInk(BuildContext context, Color seed) {
+Color audaxBadgeInk(BuildContext context, Color seed) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   final hsl = HSLColor.fromColor(seed);
   final lightness = dark

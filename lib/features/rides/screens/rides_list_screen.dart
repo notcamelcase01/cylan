@@ -126,6 +126,15 @@ class _RidesListViewState extends State<_RidesListView> {
     }
   }
 
+  /// 'Add ride' normally; a percentage once an upload reports progress. The
+  /// bare 'Uploading…' covers the gap before the first report and files whose
+  /// size isn't known — the ring is indeterminate in exactly those cases too.
+  String _uploadLabel(double? progress) {
+    if (!_uploading) return 'Add ride';
+    if (progress == null) return 'Uploading…';
+    return 'Uploading ${(progress * 100).round()}%';
+  }
+
   Future<void> _renameRide(Ride ride) async {
     final controller = TextEditingController(text: ride.name);
     final newName = await showDialog<String>(
@@ -262,12 +271,22 @@ class _RidesListViewState extends State<_RidesListView> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _uploading ? null : _showImportOptions,
         tooltip: 'Add a ride',
+        // While uploading, the ring fills with the bytes actually sent, so a
+        // big file over a slow link visibly moves instead of spinning blankly.
+        // It stays indeterminate until the first progress report lands (and
+        // for a file of unknown length).
         icon: _uploading
-            ? const SizedBox(
-                height: 20, width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            ? SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                  value: ridesProvider.uploadProgress,
+                ),
+              )
             : const Icon(Icons.add),
-        label: const Text('Add ride'),
+        label: Text(_uploadLabel(ridesProvider.uploadProgress)),
       ),
     );
   }

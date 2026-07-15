@@ -1,14 +1,27 @@
 # Testing
 
-Testing for Cylan is **manual**. Work through the checklist below before a
-release, or after touching a feature's area. Each item is a step to perform and
-the result to confirm.
+Cylan is tested at three levels. They cover different things and none replaces
+another:
+
+| Level | What it is | Command | Needs |
+|---|---|---|---|
+| **[Manual](#manual-checklist)** | The checklist below — the primary path. Anything involving a real map, GPS, file picker, share sheet, or your eyes on a colour. | — | A device + the test account |
+| **[Automated](#automated-tests)** | Unit tests over the API layer and the providers. Covers request races and error handling that **can't** be staged by hand. | `flutter test` | Nothing — ~4s, headless |
+| **[Integration](#integration-tests)** | One end-to-end script driving the real app against the live API. | `flutter test integration_test/app_test.dart …` | A device + the test account |
+
+**Before a release:** run `flutter test` (cheap, catches regressions in logic),
+then work the manual checklist for whatever you touched. The integration script
+is a bonus — it's a starting point, not a gate.
 
 Use the shared test account for anything that hits the backend
 (`cyclingngin.duckdns.org`). It has enough rides/data to exercise every screen.
 
-> There is also a small automated scaffold — see [Automated (optional)](#automated-optional)
-> at the bottom — but it is not the primary way this app is tested.
+---
+
+# Manual checklist
+
+Work through this before a release, or after touching a feature's area. Each
+item is a step to perform and the result to confirm.
 
 ---
 
@@ -28,6 +41,17 @@ Use the shared test account for anything that hits the backend
 ### Auto-login / session
 - [ ] Log in, fully close the app, reopen it → you go straight to **My Rides** without logging in again.
 - [ ] While logged in, put the device in airplane mode and reopen → you stay logged in (not kicked to landing).
+
+The rule is: a stored token is dropped **only** when the server actually
+rejects it (401/403). Any other failure — offline, timeout, a 5xx — means we
+couldn't check, so the rider stays logged in. Both halves need testing, since
+they pull in opposite directions.
+
+- [ ] Log in, then invalidate the token server-side (delete it in the Django admin, or plant a junk token) → reopen the app → you land on the **landing screen**, logged out cleanly.
+  > This only started working once `ApiException.statusCode` was populated for
+  > `{"detail": …}` bodies. Before that a rejected token was kept, and the app
+  > sat on a **My Rides** where every request failed.
+- [ ] Repeat the airplane-mode check above → still logged in. A connectivity failure must never log you out, or a rider offline mid-brevet gets locked out of their own saved routes.
 
 ### Profile
 - [ ] Open Profile (⋮ overflow menu, top-right of My Rides → **Profile**) → your username shows.
@@ -52,6 +76,14 @@ Use the shared test account for anything that hits the backend
 - [ ] Repeat with a **FIT** file.
 - [ ] Repeat with a **KML** file.
 - [ ] Pick a malformed / unsupported file → a sensible error is shown, no crash.
+
+#### Upload progress
+Best seen with a large file (multi-MB FIT) on a throttled connection — a small
+file on wifi finishes too fast to watch.
+
+- [ ] While uploading → the **Add ride** button reads "Uploading NN%" and its ring **fills** as it goes, rather than spinning blankly.
+- [ ] The percentage climbs to 100% and then the upload completes → the button returns to **Add ride** with the ring gone. It must not sit frozen at 100%.
+- [ ] Upload fails midway (kill the connection) → the error snackbar shows and the button returns to **Add ride**, not stuck mid-progress.
 
 ### Strava import — **manual only** (browser OAuth)
 - [ ] **Add ride** → **Import from Strava** → complete the Strava connect flow in the browser → you return to the app.
@@ -104,6 +136,23 @@ reached via the ⋮ overflow menu on **My Rides**.
 - [ ] If an event has a route map link, tap the map icon on its card → opens the route map (e.g. RideWithGPS) in the browser.
 - [ ] An event with a contact number shows it as plain text on the card (not a tappable link).
 - [ ] Confirm this doesn't disturb anything else on **My Rides** — upload, Strava import, sort, offline rides, profile, and theme toggle all still work as before.
+
+### Registration badge
+Sits next to the category badge on each card. Colour is a second signal only —
+the word carries the meaning, so it must read correctly in greyscale too.
+
+- [ ] An event whose registration close date is still ahead → green **Open**.
+- [ ] An event whose close date has passed → red **Closed**, and the row below it reads "Registration **closed** `<date>`" (past tense), not "closes".
+- [ ] An event with no close date published → grey **TBA**.
+- [ ] An event whose **ride date** has already passed → red **Closed**, even if its close date is in the future or missing. A finished brevet must never show green.
+- [ ] An event closing **today** still reads **Open** (you can enter until the day is out).
+- [ ] Check the list in **both light and dark themes** → the badge text stays readable against its pill.
+- [ ] Cards are **no taller** than before the badge existed — it shares the club-name row.
+
+### Month stepper
+- [ ] Tap `>` five times quickly → the month label moves **immediately** with every tap (it must never lag behind your finger), but only the month you land on loads — one spinner, not five.
+- [ ] Step back to a month already viewed this session → it appears instantly, no spinner, no re-fetch.
+- [ ] Step to a new month and wait → it loads normally (a single tap must not feel delayed).
 
 ### Session caching
 - [ ] Open a month, leave the screen (back to My Rides), reopen **Audax events** → the same month appears instantly with no loading spinner (served from the session cache, not re-fetched).
@@ -213,14 +262,88 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 
 ---
 
-## Automated (optional)
+## Automated tests
 
-### Widget smoke test — `test/widget_test.dart`
-Boots the app headless and checks it reaches the auth gate. Fast, no network/device.
+### Running them
+
+Everything below runs headless from the project root — no device, no network,
+no test account. The whole suite takes about four seconds.
+
+Run **all** of them:
 
 ```
 flutter test
 ```
+
+Run **one file**:
+
+```
+flutter test test/core/api/api_client_test.dart
+```
+
+Run **one test** by name (a substring of its description is enough):
+
+```
+flutter test --plain-name "a 401 detail body carries its status code through"
+```
+
+### Reading the output
+
+`flutter test` prints one line that keeps overwriting itself, ending in
+something like:
+
+```
+00:04 +17: All tests passed!
+```
+
+The `+17` is the number of **individual tests** that passed — not files, not
+features. So `flutter test` reporting `+17` and
+`flutter test test/core/api/api_client_test.dart` reporting `+10` aren't in
+conflict: the second is just the 10 tests that live in that one file. Today
+the 17 break down as **10 + 4 + 2 + 1** across the four files below.
+
+A failure looks like `+15 -1:` (fifteen passed, one failed), prints the
+expected vs. actual value, and exits non-zero — so CI catches it too. Add
+`-r expanded` to list every test name as it runs instead of a single updating
+line.
+
+### `test/core/api/api_client_test.dart` — 10 tests
+
+The Dio layer in `lib/core/api/api_client.dart`. Swaps Dio's transport for an
+in-memory fake, so the **real** auth interceptor, timeouts, and status handling
+all still run — only the network is faked.
+
+- The auth interceptor attaches the stored token to private endpoints, and
+  deliberately **doesn't** to `/audax-events/` or login. (DRF authenticates
+  before checking permissions, so a stale token would turn the public calendar
+  into a 401.)
+- Error mapping: a `{"detail": …}` body keeps its status code (so a 401 is
+  recognisable as one); field errors are collected; a dead connection produces
+  a `null` status code, which is how callers tell "never reached the server"
+  from "the server said no".
+- URL building: relative paths join `baseUrl` correctly, query params survive,
+  and absolute pagination URLs are used as-is.
+
+### `test/features/rides/rides_provider_test.dart` — 4 tests
+
+Request races on the rides list. These stage two overlapping requests and
+settle them **in the wrong order on purpose** — the thing you can't do by hand.
+Covers: a page-2 load landing after a pull-to-refresh must be discarded rather
+than spliced onto the fresh list; two overlapping refreshes settle on the newer
+answer; a superseded load doesn't clear the newer one's spinner or surface a
+phantom error.
+
+### `test/features/rides/offline_rides_provider_test.dart` — 2 tests
+
+The same idea for the offline store: a disk read that started **before** a save
+must not land afterwards and erase it (that bug flipped a just-saved ride's
+"Saved ✓" back to unsaved), and an invalidated refresh must still release its
+spinner.
+
+### `test/widget_test.dart` — 1 test
+
+Boots the app headless and checks it reaches the auth gate. A smoke test — it
+catches "the app doesn't start at all", nothing finer.
 
 ### Integration scaffold — `integration_test/app_test.dart`
 An end-to-end script driving this flow against the live API with a test account:
