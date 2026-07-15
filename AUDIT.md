@@ -16,9 +16,24 @@ Line numbers are as of the fixes below.
 
 ---
 
+## Status at a glance
+
+| | Item | State |
+|---|---|---|
+| F1 | Keystore brick at splash | ✅ fixed |
+| F2 | ThemeProvider throw on launch | ✅ fixed |
+| F3 | Stuck "Uploading…" FAB | ✅ fixed |
+| F4 | GPS leak + live spinner | ✅ fixed |
+| O1 | Unexpected errors stranding the UI | ✅ fixed (mitigation) — full decode refactor still deferred |
+| O2 | Audax cache race guard | ✅ fixed + tested |
+| O3 | Offline rides pinning GPS tracks in RAM | ✅ fixed + tested |
+| O4–O18 | Small / noted | ⬜ open |
+
+---
+
 ## Fixed
 
-### F1. A failing keystore bricked the app at the splash — unrecoverable
+### F1. A failing keystore bricked the app at the splash — unrecoverable ✅
 
 `ApiClient.token` read secure storage unguarded, and
 `AuthProvider.tryAutoLogin` called it via `isLoggedIn` **outside** its `try`. A
@@ -94,15 +109,18 @@ Two holes in `LiveTrackingProvider.start()`:
 
 ---
 
-## Outstanding — worth doing deliberately
+## Addressed since the first draft
 
-### O1. `ApiClient` doesn't keep its own contract on decode
+### O1. `ApiClient` doesn't keep its own contract on decode — ✅ mitigated
 
-> **Downgraded twice, read this before acting on it.** This started life as the
-> top finding. Two of the three triggers I claimed for it turned out not to
-> exist — see the corrections inline. The mechanism is real and proven; the
-> odds of it firing are very low, and the fix is not worth scheduling on its
-> own. Prefer the cheap mitigation at the end of this entry.
+> **Status:** the *stuck-UI symptom* is fixed; the underlying decode contract is
+> deliberately left as-is. See "What was done" at the end of this entry.
+>
+> **Downgraded twice, read this before acting on the rest.** This started life as
+> the top finding. Two of the three triggers I claimed for it turned out not to
+> exist — see the corrections inline. The mechanism is real and proven; the odds
+> of it firing are very low. That's why the cheap mitigation was the right call
+> and the 20-endpoint refactor was not.
 
 The class doc says everything above it "deals in models and `ApiException`".
 That holds for transport failures (`_send`) and non-2xx bodies (`_ensure`) — but
@@ -183,23 +201,31 @@ at each call site. Mechanical and low-risk, and the existing
 `api_client_test.dart` gives you a net. Add a case per body shape (string, list,
 missing key) while you're there.
 
-**Recommended instead — fix the terminal state, not the contract.** Given how
-low the odds are, the refactor isn't worth scheduling. But the *stuck* symptom
-is worth killing on its own merits, because it costs nothing and covers causes
-neither of us predicted. `audax_events_screen.dart:279` has a branch commented
-"shouldn't happen" that renders a bare `CircularProgressIndicator` with no way
-out. Make it render the same error+Retry as the branch above it:
+**What was done (mitigation, not the refactor).** Given how low the odds are,
+the `_decode` refactor was not worth scheduling. But the *stuck* symptom was
+worth killing on its own merits, because it costs nothing and covers causes
+neither of us predicted.
 
-```dart
-if (events == null) {
-  // Not loading, no error, no data: something we didn't predict. Whatever it
-  // was, a spinner here is a dead end — offer the way out instead.
-  return Center(child: FilledButton(onPressed: () => _fetchCurrent(force: true), ...));
-}
-```
+**Correction to my own recommendation:** the first draft said to fix
+`audax_events_screen.dart:279` (the `if (events == null)` branch) in the UI.
+That was wrong — that branch is *legitimately* reachable on the first frame,
+before the post-frame fetch starts, so putting a Retry there would flash it on
+every normal screen open. The fix belongs in the provider, where "loaded
+nothing, with no error" is genuinely impossible to reach except on failure. So
+instead:
 
-That converts "spinner forever" into "recoverable" for *any* cause. Do the
-`_decode` refactor opportunistically if you're already changing the API.
+- `AudaxEventsCacheProvider.fetchFirst`/`fetchMore`/`fetchFilters` each grew a
+  bare `catch (_)` that records a user-facing error, reusing the error+Retry UI
+  the screen already had for `ApiException`. A `TypeError` now surfaces as
+  "Couldn't load these events" with a Retry, not a dead-end spinner.
+- `RidesProvider.loadFirst`/`loadMore` got the same, so an unexpected failure
+  shows "Couldn't load your rides" instead of the **"No rides yet"** empty state
+  that read as data loss.
+
+Pinned by `test/features/audax/audax_events_cache_provider_test.dart` ("a
+non-ApiException surfaces as an error, not a stuck spinner"). The `_decode`
+refactor above remains the *correct* fix if you're ever already in `ApiClient` —
+this just makes the failure recoverable in the meantime.
 
 ### O2. The audax cache is missing the race guard the rides cache has
 
