@@ -96,7 +96,13 @@ Two holes in `LiveTrackingProvider.start()`:
 
 ## Outstanding — worth doing deliberately
 
-### O1. `ApiClient` doesn't keep its own contract on decode (the big one)
+### O1. `ApiClient` doesn't keep its own contract on decode
+
+> **Downgraded twice, read this before acting on it.** This started life as the
+> top finding. Two of the three triggers I claimed for it turned out not to
+> exist — see the corrections inline. The mechanism is real and proven; the
+> odds of it firing are very low, and the fix is not worth scheduling on its
+> own. Prefer the cheap mitigation at the end of this entry.
 
 The class doc says everything above it "deals in models and `ApiException`".
 That holds for transport failures (`_send`) and non-2xx bodies (`_ensure`) — but
@@ -110,12 +116,38 @@ listAudaxEvents, 200 + HTML body  →  _TypeError: 'String' is not a subtype of 
 listAudaxEvents, 200 + JSON list  →  _TypeError: 'List<dynamic>' is not a subtype of 'Map<String, dynamic>'
 ```
 
-**Correction to an earlier version of this audit:** I originally sold this as a
-captive-portal bug. That was wrong. `baseUrl` is `https://`, so a portal can't
-hand you a 200 HTML page without breaking the TLS handshake — you get a cert or
-connection error, which `_asApiException` already maps correctly. **The app
-already handles captive portals.** The realistic trigger is narrower: a
-server-side deploy bug, an nginx/proxy error page, or an API shape change.
+**Correction 1 — not a captive-portal bug.** Originally sold as one. Wrong:
+`baseUrl` is `https://`, so a portal can't hand you a 200 HTML page without
+breaking the TLS handshake — you get a cert or connection error, which
+`_asApiException` already maps correctly. **The app already handles captive
+portals.**
+
+**Correction 2 — not a scraped-data bug either.** The fallback trigger was "the
+audax scraper emits a surprise null and the whole month fails to decode". It
+can't. `AudaxEvent.brevet_date` *is* nullable on the model
+(`audax_events/models.py:78`) and `event_date = DateTimeField(source="brevet_date")`
+has no `allow_null`, so a null *would* serialize to `"event_date": null` and blow
+up `DateTime.parse(json['event_date'] as String)` — killing the whole page, not
+one row. But `api/views.py:get_queryset` already forbids it:
+
+```python
+brevet_date__isnull=False,        # event_date is guaranteed non-null
+brevet_date__year=data["year"],   # (would exclude nulls anyway)
+...
+.exclude(audax_id__isnull=True)   # audax_id is guaranteed non-null
+.exclude(audax_id="")
+```
+
+Both fields the Flutter model calls "guaranteed non-null" are *enforced*
+server-side, and every remaining nullable field maps to a nullable Dart type
+(`event_fee`→`numOrNull`, `category`/`club`→`String?`,
+`registration_close_date`→`dateOrNull`). The app/API contract is sound.
+
+**What's actually left:** you change the API and forget to update the app. Then
+you get a spinner instead of an error message — a diagnosability cost to *you*
+during a migration, not users suffering. Nothing else realistic remains. Also
+note an nginx/proxy error page carries its real status (502/504), which `_ensure`
+already turns into `ApiException('Unexpected server error (502).')` — handled.
 
 Consequences, given the trigger:
 
@@ -151,9 +183,23 @@ at each call site. Mechanical and low-risk, and the existing
 `api_client_test.dart` gives you a net. Add a case per body shape (string, list,
 missing key) while you're there.
 
-**Cheaper stopgap if you don't want the refactor:** broaden the providers'
-catches. It papers over the contract rather than fixing it, but it does stop the
-UI stranding.
+**Recommended instead — fix the terminal state, not the contract.** Given how
+low the odds are, the refactor isn't worth scheduling. But the *stuck* symptom
+is worth killing on its own merits, because it costs nothing and covers causes
+neither of us predicted. `audax_events_screen.dart:279` has a branch commented
+"shouldn't happen" that renders a bare `CircularProgressIndicator` with no way
+out. Make it render the same error+Retry as the branch above it:
+
+```dart
+if (events == null) {
+  // Not loading, no error, no data: something we didn't predict. Whatever it
+  // was, a spinner here is a dead end — offer the way out instead.
+  return Center(child: FilledButton(onPressed: () => _fetchCurrent(force: true), ...));
+}
+```
+
+That converts "spinner forever" into "recoverable" for *any* cause. Do the
+`_decode` refactor opportunistically if you're already changing the API.
 
 ### O2. The audax cache is missing the race guard the rides cache has
 
@@ -345,9 +391,16 @@ given it's explicitly best-effort cleanup; worth knowing.
 | Tier | Items |
 |---|---|
 | Fixed | F1 keystore brick, F2 theme throw, F3 stuck FAB, F4 GPS leak + live spinner |
-| Worth doing deliberately | O1 decode contract, O2 audax race guard, O3 offline memory |
-| Small / cheap | O4–O10 |
-| Noted, likely ignore | O11–O18 |
+| Worth doing deliberately | O2 audax race guard, O3 offline memory |
+| Cheap, high value-per-line | O1's mitigation (retry instead of a dead-end spinner), O4–O10 |
+| Noted, likely ignore | O1's full refactor, O11–O18 |
+
+**On O1 specifically:** it led this list in the first draft and has since been
+downgraded twice, both times by checking a claim instead of asserting it (the
+HTTPS scheme; then the backend queryset). The mechanism is proven, the triggers
+mostly aren't real. If you read one thing here as a lesson about the audit
+itself: a finding's mechanism being real says nothing about whether it will ever
+fire, and only the second question decides whether it's worth your time.
 
 **Context that belongs next to the list:** `flutter analyze` is clean, all 17
 tests pass, and the codebase is above average — the `_generation` guards and
