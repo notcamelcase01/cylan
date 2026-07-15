@@ -262,11 +262,19 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 
 ---
 
-## Automated tests
+---
+
+# Automated tests
+
+Unit tests over the API layer and the providers. They exist for the things the
+manual checklist genuinely **can't** reach: two overlapping network requests
+resolving in the wrong order, and the exact JSON shapes the server returns on
+failure. You can't hand-time a pull-to-refresh against an in-flight page load;
+these do it deterministically, every run, in milliseconds.
 
 ### Running them
 
-Everything below runs headless from the project root — no device, no network,
+Everything here runs headless from the project root — no device, no network,
 no test account. The whole suite takes about four seconds.
 
 Run **all** of them:
@@ -345,7 +353,15 @@ spinner.
 Boots the app headless and checks it reaches the auth gate. A smoke test — it
 catches "the app doesn't start at all", nothing finer.
 
-### Integration scaffold — `integration_test/app_test.dart`
+---
+
+# Integration tests
+
+### `integration_test/app_test.dart`
+
+Unlike the automated tests above, this drives the **real app against the live
+API**, so it needs a device and the test account.
+
 An end-to-end script driving this flow against the live API with a test account:
 
 **logout → login → open a ride → weather → notable section (open, exit) → smoothing → offline map (save, open, exit)**
