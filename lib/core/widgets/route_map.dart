@@ -150,6 +150,16 @@ class RouteMap extends StatefulWidget {
   /// ride map (nothing to sit behind).
   final List<LatLng>? contextRoute;
 
+  /// When true (the default during live tracking), the camera keeps snapping to
+  /// each new [liveLocation]. The live-tracking screen turns this off when the
+  /// rider pans the map so it stops fighting them, then flips it back on (which
+  /// re-centers) when they tap Recenter.
+  final bool followLocation;
+
+  /// Called when a rider gesture moves the map while [followLocation] is on, so
+  /// the parent can drop out of follow mode and show its Recenter button.
+  final VoidCallback? onUserPannedAway;
+
   const RouteMap({
     super.key,
     required this.profile,
@@ -160,6 +170,8 @@ class RouteMap extends StatefulWidget {
     this.interactive = true,
     this.showBasemap = true,
     this.contextRoute,
+    this.followLocation = true,
+    this.onUserPannedAway,
   });
 
   @override
@@ -174,8 +186,22 @@ class _RouteMapState extends State<RouteMap> {
   void didUpdateWidget(covariant RouteMap oldWidget) {
     super.didUpdateWidget(oldWidget);
     final loc = widget.liveLocation;
-    if (loc != null && loc != oldWidget.liveLocation) {
+    if (loc == null || !widget.followLocation) return;
+    // Snap to a new fix, or re-center when follow was just re-enabled (the
+    // rider tapped Recenter after panning away).
+    final newFix = loc != oldWidget.liveLocation;
+    final reEngaged = !oldWidget.followLocation;
+    if (newFix || reEngaged) {
       _followLocation(loc);
+    }
+  }
+
+  // A rider drag/pinch while following drops us out of follow mode; a
+  // programmatic camera move (a new fix, or Recenter) reports hasGesture:false
+  // and is ignored, so following never cancels itself.
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    if (hasGesture && widget.followLocation) {
+      widget.onUserPannedAway?.call();
     }
   }
 
@@ -227,6 +253,7 @@ class _RouteMapState extends State<RouteMap> {
         ),
         minZoom: _minZoom,
         maxZoom: _maxZoom,
+        onPositionChanged: _onPositionChanged,
         cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
         // With no basemap (offline), give the route line a plain, theme-aware
         // backdrop instead of the grey that would flash behind absent tiles.

@@ -32,7 +32,12 @@ class LiveTrackingProvider extends ChangeNotifier {
   bool _disposed = false;
 
   Position? position;
-  double? traveledDistanceKm;
+
+  /// Straight-line distance from the ride's starting point to the current
+  /// GPS fix — not distance traveled along the route (which would need
+  /// matching the fix to a point on the route, unreliable on routes that
+  /// cross or double back on themselves).
+  double? distanceFromStartKm;
   double? offRouteMeters;
 
   bool isLoading = false;
@@ -127,7 +132,6 @@ class LiveTrackingProvider extends ChangeNotifier {
     position = pos;
     final profile = ride.profile;
     if (profile != null && profile.latitude.isNotEmpty) {
-      var bestIdx = 0;
       var bestMeters = double.infinity;
       for (var i = 0; i < profile.latitude.length; i++) {
         final d = Geolocator.distanceBetween(
@@ -138,11 +142,16 @@ class LiveTrackingProvider extends ChangeNotifier {
         );
         if (d < bestMeters) {
           bestMeters = d;
-          bestIdx = i;
         }
       }
       offRouteMeters = bestMeters;
-      traveledDistanceKm = profile.distanceKm[bestIdx];
+      distanceFromStartKm = Geolocator.distanceBetween(
+            pos.latitude,
+            pos.longitude,
+            profile.latitude.first,
+            profile.longitude.first,
+          ) /
+          1000;
     }
     notifyListeners();
   }

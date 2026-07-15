@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -9,8 +10,18 @@ import '../providers/live_tracking_provider.dart';
 
 /// Below this speed, GPS heading is too noisy to be worth showing (it can
 /// swing wildly while stopped or barely moving), so the live marker falls
-/// back to a plain dot. ~1.8 km/h — comfortably below walking pace.
-const double _headingSpeedThresholdMps = 0.5;
+/// back to a plain dot. 1 km/h.
+const double _headingSpeedThresholdMps = 1000 / 3600;
+
+/// Brand chrome for the live-tracking screen. [_brandBlue] is the app's seed
+/// color (shared with the web app); the gradient pairs it with a brighter
+/// sky/cyan so the header and stat badge feel energetic rather than flat.
+const Color _brandBlue = Color(0xFF2F6DF6);
+const LinearGradient _headerGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [_brandBlue, Color(0xFF19C3E6)],
+);
 
 class LiveTrackingScreen extends StatelessWidget {
   final Ride ride;
@@ -34,10 +45,19 @@ class LiveTrackingScreen extends StatelessWidget {
   }
 }
 
-class _LiveTrackingView extends StatelessWidget {
+class _LiveTrackingView extends StatefulWidget {
   final bool showBasemap;
 
   const _LiveTrackingView({this.showBasemap = true});
+
+  @override
+  State<_LiveTrackingView> createState() => _LiveTrackingViewState();
+}
+
+class _LiveTrackingViewState extends State<_LiveTrackingView> {
+  /// Whether the map is snapping to the rider. On by default; the rider drops
+  /// out of it by panning the map, and taps Recenter to switch it back on.
+  bool _following = true;
 
   @override
   Widget build(BuildContext context) {
@@ -45,14 +65,95 @@ class _LiveTrackingView extends StatelessWidget {
     final ride = provider.ride;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Live: ${ride.name}')),
+      // Let the map fill the whole screen and float the gradient header over
+      // it, so the map peeks behind the header's rounded corners.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: _headerGradient,
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+          ),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.directions_bike,
+                  size: 18, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                ride.name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: Center(child: _LivePulse()),
+          ),
+        ],
+      ),
       body: _buildBody(context, provider),
     );
   }
 
   Widget _buildBody(BuildContext context, LiveTrackingProvider provider) {
+    final theme = Theme.of(context);
     if (provider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                gradient: _headerGradient,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: _brandBlue.withValues(alpha: 0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.directions_bike,
+                  color: Colors.white, size: 34),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 16),
+            Text('Getting your ride ready…',
+                style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Warming up the GPS',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
     }
     if (provider.permissionMessage != null) {
       return Center(
@@ -90,96 +191,341 @@ class _LiveTrackingView extends StatelessWidget {
       );
     }
     if (provider.error != null) {
-      return Center(child: Text(provider.error!));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+              const SizedBox(height: 12),
+              Text(provider.error!, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
     }
 
     final profile = provider.ride.profile!;
     final pos = provider.position;
-    final liveLocation =
-        pos == null ? null : LatLng(pos.latitude, pos.longitude);
+    final liveLocation = pos == null
+        ? null
+        : LatLng(pos.latitude, pos.longitude);
     // GPS heading is noise below walking speed, so only show the arrow once
     // actually moving; otherwise the marker falls back to a plain dot.
-    final liveHeading =
-        pos != null && pos.speed > _headingSpeedThresholdMps
-            ? pos.heading
-            : null;
-    return Column(
+    final liveHeading = pos != null && pos.speed > _headingSpeedThresholdMps
+        ? pos.heading
+        : null;
+    return Stack(
       children: [
-        Expanded(
-          child: RouteMap(
-            profile: profile,
-            liveLocation: liveLocation,
-            liveHeading: liveHeading,
-            showBasemap: showBasemap,
+        RouteMap(
+          profile: profile,
+          liveLocation: liveLocation,
+          liveHeading: liveHeading,
+          showBasemap: widget.showBasemap,
+          followLocation: _following,
+          onUserPannedAway: () {
+            if (_following) setState(() => _following = false);
+          },
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Only shown once the rider has panned off themselves — while
+                  // the map is still following, there's nothing to recenter to.
+                  if (!_following && liveLocation != null)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _RecenterButton(
+                          onTap: () => setState(() => _following = true),
+                        ),
+                      ),
+                    ),
+                  _StatusCard(provider: provider),
+                ],
+              ),
+            ),
           ),
         ),
-        _InfoPanel(provider: provider),
       ],
     );
   }
 }
 
-class _InfoPanel extends StatelessWidget {
+/// Cheerful gradient pill that snaps the map back to the rider and re-engages
+/// auto-follow. Appears bottom-right over the map only after the rider has
+/// panned away.
+class _RecenterButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RecenterButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: _headerGradient,
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(
+                color: _brandBlue.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.my_location, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Recenter',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small pulsing "LIVE" badge for the app bar — a gentle heartbeat on the dot
+/// so the header feels alive while tracking. Purely decorative.
+class _LivePulse extends StatefulWidget {
+  const _LivePulse();
+
+  @override
+  State<_LivePulse> createState() => _LivePulseState();
+}
+
+class _LivePulseState extends State<_LivePulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: Tween(begin: 1.0, end: 0.25).animate(_controller),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFF5252),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Floating card over the bottom of the map — a hero distance-from-start
+/// readout with a gradient bike badge, plus a Strava-style GPS status pill
+/// (icon + short phrase) and a small warning badge when off route instead of
+/// spelling out the distance off.
+class _StatusCard extends StatelessWidget {
   final LiveTrackingProvider provider;
-  const _InfoPanel({required this.provider});
+  const _StatusCard({required this.provider});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final offRoute = (provider.offRouteMeters ?? 0) > 60;
+    final hasFix = provider.position != null;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12), blurRadius: 16, offset: const Offset(0, -4)),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final String gpsText;
+    final Color gpsColor;
+    final IconData gpsIcon;
+    if (!hasFix) {
+      gpsText = provider.gpsMessage ?? 'Acquiring GPS signal…';
+      gpsColor = Colors.amber.shade800;
+      gpsIcon = Icons.location_searching;
+    } else if (provider.gpsMessage != null) {
+      gpsText = provider.gpsMessage!;
+      gpsColor = theme.colorScheme.error;
+      gpsIcon = Icons.gps_off;
+    } else {
+      gpsText = 'GPS locked';
+      gpsColor = Colors.green.shade700;
+      gpsIcon = Icons.gps_fixed;
+    }
+
+    return Center(
+      // Shrink-wraps to its content (mainAxisSize.min) so the happy compact
+      // state stays a neat centered pill; the GPS label is Flexible so a long
+      // status message ellipsizes instead of overflowing.
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Sits above the route rather than replacing it: the map is still
-            // worth reading while the receiver searches, and this usually
-            // clears itself.
-            if (provider.gpsMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: _headerGradient,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: _brandBlue.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.directions_bike,
+                  color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Icon(Icons.location_searching,
-                        color: theme.colorScheme.onSurfaceVariant, size: 18),
+                    Text(
+                      (provider.distanceFromStartKm ?? 0).toStringAsFixed(1),
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.primary,
+                        height: 1,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        'km',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'from start',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Container(
+              width: 1,
+              height: 34,
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 14),
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: gpsColor.withValues(alpha: isDark ? 0.22 : 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(gpsIcon, size: 15, color: gpsColor),
                     const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(provider.gpsMessage!,
-                          style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant)),
+                    Flexible(
+                      child: Text(
+                        gpsText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: gpsColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            if (offRoute)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded,
-                        color: theme.colorScheme.error, size: 18),
-                    const SizedBox(width: 6),
-                    Text('${provider.offRouteMeters!.toStringAsFixed(0)} m off route',
-                        style: TextStyle(color: theme.colorScheme.error)),
-                  ],
-                ),
-              ),
-            Text(
-              '${(provider.traveledDistanceKm ?? 0).toStringAsFixed(1)} / '
-              '${provider.ride.distanceKm.toStringAsFixed(1)} km',
-              style: theme.textTheme.titleMedium,
             ),
+            if (offRoute) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error
+                      .withValues(alpha: isDark ? 0.22 : 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.warning_amber_rounded,
+                    size: 18, color: theme.colorScheme.error),
+              ),
+            ],
           ],
         ),
       ),
