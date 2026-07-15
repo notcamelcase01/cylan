@@ -63,48 +63,50 @@ class _LiveTrackingViewState extends State<_LiveTrackingView> {
   Widget build(BuildContext context) {
     final provider = context.watch<LiveTrackingProvider>();
     final ride = provider.ride;
+    // Plain monochrome app bar (rather than the brand gradient) so it reads
+    // as pure black/white against either theme instead of tinted blue.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final barColor = isDark ? Colors.black : Colors.white;
+    final onBarColor = isDark ? Colors.white : Colors.black;
 
     return Scaffold(
-      // Let the map fill the whole screen and float the gradient header over
-      // it, so the map peeks behind the header's rounded corners.
+      // Let the map fill the whole screen and float the header over it, so
+      // the map peeks behind the header's rounded corners.
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        backgroundColor: barColor,
+        foregroundColor: onBarColor,
         elevation: 0,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: _headerGradient,
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-          ),
+        systemOverlayStyle:
+            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
         ),
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color: onBarColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.directions_bike,
-                  size: 18, color: Colors.white),
+              child: Icon(Icons.directions_bike, size: 18, color: onBarColor),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 ride.name,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, color: Colors.white),
+                style:
+                    TextStyle(fontWeight: FontWeight.w700, color: onBarColor),
               ),
             ),
           ],
         ),
-        actions: const [
+        actions: [
           Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: Center(child: _LivePulse()),
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(child: _LivePulse(color: onBarColor)),
           ),
         ],
       ),
@@ -307,9 +309,12 @@ class _RecenterButton extends StatelessWidget {
 }
 
 /// Small pulsing "LIVE" badge for the app bar — a gentle heartbeat on the dot
-/// so the header feels alive while tracking. Purely decorative.
+/// so the header feels alive while tracking. Purely decorative. [color] is
+/// the app bar's foreground color (black or white, per theme); the red dot
+/// stays red regardless so "recording" still reads as urgent on either.
 class _LivePulse extends StatefulWidget {
-  const _LivePulse();
+  final Color color;
+  const _LivePulse({required this.color});
 
   @override
   State<_LivePulse> createState() => _LivePulseState();
@@ -333,7 +338,7 @@ class _LivePulseState extends State<_LivePulse>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
+        color: widget.color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -351,10 +356,10 @@ class _LivePulseState extends State<_LivePulse>
             ),
           ),
           const SizedBox(width: 6),
-          const Text(
+          Text(
             'LIVE',
             style: TextStyle(
-              color: Colors.white,
+              color: widget.color,
               fontWeight: FontWeight.w800,
               fontSize: 12,
               letterSpacing: 1,
