@@ -35,6 +35,9 @@ class _RidesListView extends StatefulWidget {
 class _RidesListViewState extends State<_RidesListView> {
   final _scrollController = ScrollController();
   bool _uploading = false;
+  bool _importingGoogleMaps = false;
+
+  bool get _busy => _uploading || _importingGoogleMaps;
 
   @override
   void initState() {
@@ -73,6 +76,12 @@ class _RidesListViewState extends State<_RidesListView> {
               subtitle: const Text('Bring in your saved Strava routes'),
               onTap: () => Navigator.pop(context, 'strava'),
             ),
+            ListTile(
+              leading: const Icon(Icons.map_outlined, color: Color(0xFF4285F4)),
+              title: const Text('Import from Google Maps'),
+              subtitle: const Text('Paste a Maps directions link · beta'),
+              onTap: () => Navigator.pop(context, 'google_maps'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -83,6 +92,8 @@ class _RidesListViewState extends State<_RidesListView> {
       _pickAndUpload();
     } else if (choice == 'strava') {
       _importFromStrava();
+    } else if (choice == 'google_maps') {
+      _importFromGoogleMaps();
     }
   }
 
@@ -104,6 +115,29 @@ class _RidesListViewState extends State<_RidesListView> {
     );
     if (imported == true && mounted) {
       context.read<RidesProvider>().refresh();
+    }
+  }
+
+  Future<void> _importFromGoogleMaps() async {
+    final input = await showDialog<_GoogleMapsImportInput>(
+      context: context,
+      builder: (context) => const _GoogleMapsImportDialog(),
+    );
+    if (input == null || !mounted) return;
+
+    setState(() => _importingGoogleMaps = true);
+    try {
+      final ride = await context
+          .read<RidesProvider>()
+          .importFromGoogleMaps(url: input.url, name: input.name);
+      if (!mounted) return;
+
+      final error = context.read<RidesProvider>().error;
+      if (ride == null && error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      }
+    } finally {
+      if (mounted) setState(() => _importingGoogleMaps = false);
     }
   }
 
@@ -131,10 +165,13 @@ class _RidesListViewState extends State<_RidesListView> {
     }
   }
 
-  /// 'Add ride' normally; a percentage once an upload reports progress. The
-  /// bare 'Uploading…' covers the gap before the first report and files whose
-  /// size isn't known — the ring is indeterminate in exactly those cases too.
-  String _uploadLabel(double? progress) {
+  /// 'Add ride' normally; a percentage once a file upload reports progress;
+  /// 'Importing…' for the (progressless) Google Maps import. The bare
+  /// 'Uploading…' covers the gap before the first upload report and files
+  /// whose size isn't known — the ring is indeterminate in exactly those
+  /// cases too.
+  String _fabLabel(double? progress) {
+    if (_importingGoogleMaps) return 'Importing…';
     if (!_uploading) return 'Add ride';
     if (progress == null) return 'Uploading…';
     return 'Uploading ${(progress * 100).round()}%';
@@ -274,24 +311,25 @@ class _RidesListViewState extends State<_RidesListView> {
       ),
       body: _buildBody(context, ridesProvider, weatherCache),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _uploading ? null : _showImportOptions,
+        onPressed: _busy ? null : _showImportOptions,
         tooltip: 'Add a ride',
         // While uploading, the ring fills with the bytes actually sent, so a
         // big file over a slow link visibly moves instead of spinning blankly.
         // It stays indeterminate until the first progress report lands (and
-        // for a file of unknown length).
-        icon: _uploading
+        // for a file of unknown length, and for the Google Maps import, which
+        // reports no progress at all).
+        icon: _busy
             ? SizedBox(
                 height: 20,
                 width: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: Colors.white,
-                  value: ridesProvider.uploadProgress,
+                  value: _importingGoogleMaps ? null : ridesProvider.uploadProgress,
                 ),
               )
             : const Icon(Icons.add),
-        label: Text(_uploadLabel(ridesProvider.uploadProgress)),
+        label: Text(_fabLabel(ridesProvider.uploadProgress)),
       ),
     );
   }
@@ -466,6 +504,120 @@ class _RidesListViewState extends State<_RidesListView> {
           );
         },
       ),
+    );
+  }
+}
+
+class _GoogleMapsImportInput {
+  final String url;
+  final String? name;
+  const _GoogleMapsImportInput({required this.url, this.name});
+}
+
+/// Collects a Maps link + optional name, showing the beta accuracy warning
+/// up front so it's seen before import runs, not after something looks off.
+/// Validates the link is non-empty client-side; the server is the source of
+/// truth for whether it's actually a usable Maps link (bad input there comes
+/// back as a displayable [ApiException], surfaced by the caller).
+class _GoogleMapsImportDialog extends StatefulWidget {
+  const _GoogleMapsImportDialog();
+
+  @override
+  State<_GoogleMapsImportDialog> createState() =>
+      _GoogleMapsImportDialogState();
+}
+
+class _GoogleMapsImportDialogState extends State<_GoogleMapsImportDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _urlController = TextEditingController();
+  final _nameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final name = _nameController.text.trim();
+    Navigator.pop(
+      context,
+      _GoogleMapsImportInput(
+        url: _urlController.text.trim(),
+        name: name.isEmpty ? null : name,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Import from Google Maps'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.science_outlined,
+                        size: 20, color: theme.colorScheme.onTertiaryContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Beta: Google Maps import can produce a route that\'s '
+                        'slightly inaccurate. Double-check it before you ride.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _urlController,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Google Maps link',
+                  hintText: 'https://maps.app.goo.gl/...',
+                ),
+                validator: (value) => (value == null || value.trim().isEmpty)
+                    ? 'Paste a Google Maps directions link'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Ride name (optional)'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Import'),
+        ),
+      ],
     );
   }
 }

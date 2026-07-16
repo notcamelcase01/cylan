@@ -28,6 +28,19 @@ class _FakeApi implements ApiClient {
     return completer.future;
   }
 
+  /// What `importFromGoogleMaps` does next: a [Ride] to succeed with, or any
+  /// [Object] to throw — lets a test drive both an [ApiException] (a domain
+  /// error the server sent) and an arbitrary failure (the "something we
+  /// never anticipated" case [RidesProvider] must still catch).
+  Object? googleMapsResult;
+
+  @override
+  Future<Ride> importFromGoogleMaps({required String url, String? name}) async {
+    final result = googleMapsResult;
+    if (result is Ride) return result;
+    throw result ?? StateError('googleMapsResult not set for this test');
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -149,6 +162,50 @@ void main() {
           reason: 'an error belonging to an abandoned request would be a '
               'phantom: the list on screen loaded fine');
       expect(_names(provider), ['ok']);
+    });
+  });
+
+  group('Google Maps import', () {
+    test('a successful import prepends the new ride and clears any error',
+        () async {
+      final api = _FakeApi()..googleMapsResult = _ride(5, 'Sunday loop');
+      final provider = RidesProvider(api: api);
+
+      final ride = await provider
+          .importFromGoogleMaps(url: 'https://maps.app.goo.gl/x');
+
+      expect(ride?.name, 'Sunday loop');
+      expect(provider.error, isNull);
+      expect(_names(provider), ['Sunday loop']);
+    });
+
+    test('a domain error (route outside India) surfaces its message, not a '
+        'crash', () async {
+      final api = _FakeApi()
+        ..googleMapsResult = ApiException(
+            "This route goes outside India, which isn't supported for "
+            'Google Maps import yet.');
+      final provider = RidesProvider(api: api);
+
+      final ride = await provider
+          .importFromGoogleMaps(url: 'https://maps.app.goo.gl/x');
+
+      expect(ride, isNull);
+      expect(provider.error, contains('outside India'));
+      expect(_names(provider), isEmpty,
+          reason: 'a failed import must not add a phantom ride to the list');
+    });
+
+    test('an unanticipated failure (not an ApiException) is still caught, '
+        'never left to crash the caller or strand its busy flag', () async {
+      final api = _FakeApi()..googleMapsResult = Exception('boom');
+      final provider = RidesProvider(api: api);
+
+      final ride = await provider
+          .importFromGoogleMaps(url: 'https://maps.app.goo.gl/x');
+
+      expect(ride, isNull);
+      expect(provider.error, isNotNull);
     });
   });
 }

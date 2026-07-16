@@ -192,4 +192,90 @@ void main() {
           'https://cyclingngin.duckdns.org/api/rides/?page=3');
     });
   });
+
+  group('Google Maps import', () {
+    // A full Ride detail body — the endpoint returns the same shape as a
+    // file upload, so parsing it is not this endpoint's own concern; only
+    // the request it sends and the errors it surfaces are.
+    final rideBody = {
+      'id': 51,
+      'name': 'Sunday loop',
+      'source_format': 'GPX',
+      'recorded_at': null,
+      'created_at': '2026-07-13T08:00:00Z',
+      'distance_km': 42.3,
+      'distance_m': 42350.0,
+      'total_ascent_m': 512.0,
+      'total_descent_m': 512.0,
+      'min_elevation_m': 10.0,
+      'max_elevation_m': 522.0,
+      'net_elevation_m': 512.0,
+      'max_gradient_pct': 12.0,
+      'min_gradient_pct': -12.0,
+      'point_count': 900,
+    };
+
+    test('sends the url and name, and parses the imported ride', () async {
+      final adapter = _FakeAdapter(status: 201, body: rideBody);
+      final ride = await ApiClient.forTests(adapter).importFromGoogleMaps(
+        url: 'https://maps.app.goo.gl/AXcKYLre7VER7xTn8',
+        name: 'Sunday loop',
+      );
+
+      final sent = adapter.requests.single;
+      expect(sent.path, '/rides/google-maps/');
+      expect(sent.data, {
+        'url': 'https://maps.app.goo.gl/AXcKYLre7VER7xTn8',
+        'name': 'Sunday loop',
+      });
+      expect(ride.id, 51);
+      expect(ride.name, 'Sunday loop');
+    });
+
+    test('omits name entirely when none is given, rather than sending blank',
+        () async {
+      final adapter = _FakeAdapter(status: 201, body: rideBody);
+      await ApiClient.forTests(adapter).importFromGoogleMaps(
+        url: 'https://maps.app.goo.gl/AXcKYLre7VER7xTn8',
+      );
+
+      final sentData = adapter.requests.single.data as Map;
+      expect(sentData.containsKey('name'), isFalse);
+    });
+
+    test('a domain error (e.g. a route outside India) surfaces as a '
+        'displayable ApiException, not a crash', () async {
+      final adapter = _FakeAdapter(status: 400, body: {
+        'detail': "This route goes outside India, which isn't supported "
+            'for Google Maps import yet. Try Strava import or uploading a '
+            'GPX/FIT/KML file instead.',
+      });
+
+      await expectLater(
+        ApiClient.forTests(adapter)
+            .importFromGoogleMaps(url: 'https://maps.app.goo.gl/outside'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.message, 'message', contains('outside India'))
+            .having((e) => e.statusCode, 'statusCode', 400)),
+      );
+    });
+
+    test('a dropped connection times out as an ApiException, never hangs '
+        'indefinitely', () async {
+      final adapter = _FakeAdapter(
+        throwing: DioException.connectionError(
+          requestOptions: RequestOptions(),
+          reason: 'no route to host',
+          error: const SocketException('no route to host'),
+        ),
+      );
+
+      await expectLater(
+        ApiClient.forTests(adapter)
+            .importFromGoogleMaps(url: 'https://maps.app.goo.gl/x'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.message, 'message', contains('Could not reach the server'))),
+      );
+    });
+  });
 }

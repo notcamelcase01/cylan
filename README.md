@@ -21,6 +21,7 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 ### Rides
 - Upload a route from a GPX, FIT, or KML file
 - Import routes from Strava
+- Import a route from a Google Maps directions link (checkpoints you plotted) — **beta**, India only; the app warns that the generated route can be slightly inaccurate before you import
 - Sort rides (newest, name, distance)
 - Rename or delete a ride
 - Pull-to-refresh, infinite scroll

@@ -90,6 +90,19 @@ file on wifi finishes too fast to watch.
 - [ ] Imported Strava routes appear in the rides list.
 - [ ] Cancel/deny the Strava auth → app handles it gracefully (no hang, clear state).
 
+### Google Maps import — **manual only** (live routing + elevation lookup)
+Server-side this is `POST /rides/google-maps/`, **India only**, and fully
+synchronous (up to 90s) — no browser step, unlike Strava.
+
+- [ ] **Add ride** → **Import from Google Maps** → the beta warning ("route can be slightly inaccurate") is visible before you can import.
+- [ ] Paste a valid Maps directions link (a route within India, with checkpoints) + a name → **Import** → the button reads "Importing…" with an indeterminate spinner (no percentage, unlike file upload) → the ride appears in the list with the name you gave it.
+- [ ] Repeat with no name entered → the ride imports using the server's default name.
+- [ ] Tap **Import** with an empty link field → inline validation blocks it, no request is sent.
+- [ ] Paste a link for a route **outside India** → a clear, displayable error is shown (not a raw exception), the FAB returns to **Add ride**, and no phantom ride appears in the list.
+- [ ] Paste a link with no stops/checkpoints, or a non-Maps URL → a clear error is shown, no crash.
+- [ ] Start an import, then kill the connection before it resolves → after the timeout, an error is shown and the FAB returns to **Add ride** — it must not spin indefinitely.
+- [ ] While importing, the FAB is disabled (can't start a second import or upload concurrently).
+
 ---
 
 ## Audax events
@@ -312,21 +325,22 @@ flutter test --plain-name "a 401 detail body carries its status code through"
 something like:
 
 ```
-00:04 +17: All tests passed!
+00:04 +44: All tests passed!
 ```
 
-The `+17` is the number of **individual tests** that passed — not files, not
-features. So `flutter test` reporting `+17` and
-`flutter test test/core/api/api_client_test.dart` reporting `+10` aren't in
-conflict: the second is just the 10 tests that live in that one file. Today
-the 17 break down as **10 + 4 + 2 + 1** across the four files below.
+The `+44` is the number of **individual tests** that passed — not files, not
+features. So `flutter test` reporting `+44` and
+`flutter test test/core/api/api_client_test.dart` reporting `+14` aren't in
+conflict: the second is just the 14 tests that live in that one file. Today
+the 44 break down as **14 + 7 + 2 + 7 + 6 + 7 + 1** across the seven files
+below.
 
 A failure looks like `+15 -1:` (fifteen passed, one failed), prints the
 expected vs. actual value, and exits non-zero — so CI catches it too. Add
 `-r expanded` to list every test name as it runs instead of a single updating
 line.
 
-### `test/core/api/api_client_test.dart` — 10 tests
+### `test/core/api/api_client_test.dart` — 14 tests
 
 The Dio layer in `lib/core/api/api_client.dart`. Swaps Dio's transport for an
 in-memory fake, so the **real** auth interceptor, timeouts, and status handling
@@ -342,8 +356,12 @@ all still run — only the network is faked.
   from "the server said no".
 - URL building: relative paths join `baseUrl` correctly, query params survive,
   and absolute pagination URLs are used as-is.
+- Google Maps import: the request carries `url` and (when given) `name`, and
+  omits `name` entirely rather than sending it blank; a domain error (e.g. a
+  route outside India) surfaces its server message rather than throwing a raw
+  type; a dropped connection resolves to an `ApiException`, not a hang.
 
-### `test/features/rides/rides_provider_test.dart` — 4 tests
+### `test/features/rides/rides_provider_test.dart` — 7 tests
 
 Request races on the rides list. These stage two overlapping requests and
 settle them **in the wrong order on purpose** — the thing you can't do by hand.
@@ -352,12 +370,51 @@ than spliced onto the fresh list; two overlapping refreshes settle on the newer
 answer; a superseded load doesn't clear the newer one's spinner or surface a
 phantom error.
 
+Also covers Google Maps import: a successful import prepends the new ride and
+clears any prior error; a domain error (`ApiException`, e.g. route outside
+India) surfaces its message without adding a phantom ride; and — since not
+every failure arrives as an `ApiException` (a 2xx with an unexpected body
+shape, say) — an arbitrary unanticipated exception is still caught rather
+than crashing the caller or stranding its busy flag.
+
 ### `test/features/rides/offline_rides_provider_test.dart` — 2 tests
 
-The same idea for the offline store: a disk read that started **before** a save
-must not land afterwards and erase it (that bug flipped a just-saved ride's
-"Saved ✓" back to unsaved), and an invalidated refresh must still release its
-spinner.
+The same request-race idea for the offline store: a disk read that started
+**before** a save must not land afterwards and erase it (that bug flipped a
+just-saved ride's "Saved ✓" back to unsaved), and an invalidated refresh must
+still release its spinner.
+
+### `test/features/rides/offline_ride_store_test.dart` — 7 tests
+
+The on-disk offline store itself (`meta.json` + saved track). Covers: a ride
+lists from its metadata alone without needing to open the full GPS track;
+`load()` returns the full ride for the offline map; `save()` reports back the
+`savedAt` it actually wrote; and rides saved by an older app version (missing
+newer metadata fields) are still listed via a fallback, get upgraded in place
+the first time they're read so the slow path only runs once, and survive a
+save directory that can't be read at all.
+
+### `test/features/audax/audax_events_cache_provider_test.dart` — 7 tests
+
+The same request-race and unexpected-failure coverage as the rides list,
+applied to the per-month/filter Audax events cache: a late `fetchMore`
+doesn't get appended after a refresh replaces the list, overlapping refreshes
+settle on the newer one, a superseded fetch doesn't clobber the current
+spinner or surface a stale error, and refreshing one cache key doesn't
+invalidate an unrelated key's in-flight `fetchMore`. Plus: a non-`ApiException`
+failure (from either `refresh` or `fetchMore`) still surfaces as an error
+instead of a stuck spinner, and `fetchMore` failing keeps whatever was already
+loaded rather than clearing it.
+
+### `test/features/tracking/live_tracking_provider_test.dart` — 6 tests
+
+The GPS follow-mode provider, without real location hardware. Covers: leaving
+the screen while the permission prompt is still open never opens the GPS feed
+afterwards; a start failure surfaces an error instead of spinning forever; a
+permission refusal explains itself and stops (rather than retrying blindly);
+a feed error is shown as a dismissable note rather than replacing the whole
+screen; a subsequent good fix clears that note; and a fix that never arrives
+says so explicitly instead of leaving the rider staring at a silent screen.
 
 ### `test/widget_test.dart` — 1 test
 

@@ -166,6 +166,30 @@ class RidesProvider extends ChangeNotifier {
     }
   }
 
+  /// Imports a ride from a Google Maps directions link. India only; the
+  /// server rejects anything else with a displayable error, surfaced via
+  /// [error] like every other failure here.
+  Future<Ride?> importFromGoogleMaps({required String url, String? name}) async {
+    error = null;
+    try {
+      final ride = await _api.importFromGoogleMaps(url: url, name: name);
+      _rides = [ride, ..._rides];
+      return ride;
+    } on ApiException catch (e) {
+      error = e.message;
+      return null;
+    } catch (_) {
+      // As in loadFirst: not every failure here is an ApiException (a 2xx
+      // whose body isn't the expected shape arrives as a raw TypeError), and
+      // letting that escape would break this method's contract and leave the
+      // caller's busy flag stuck on.
+      error = "Couldn't import that route. Please try again.";
+      return null;
+    } finally {
+      notifyListeners();
+    }
+  }
+
   Future<bool> rename(int id, String name) async {
     try {
       final updated = await _api.renameRide(id, name);

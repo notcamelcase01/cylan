@@ -312,6 +312,27 @@ class ApiClient {
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Imports a ride from a Google Maps directions link (the checkpoints a
+  /// rider plotted) rather than a file. India only — the server rejects
+  /// anything else with a displayable [ApiException]. Synchronous, like
+  /// [uploadRide]: resolving the link, routing, and per-point elevation
+  /// lookups can take a few seconds, hence the same longer timeout.
+  Future<Ride> importFromGoogleMaps({required String url, String? name}) async {
+    final response = await _send(() => _dio.post<dynamic>(
+          '/rides/google-maps/',
+          data: {
+            'url': url,
+            if (name != null && name.isNotEmpty) 'name': name,
+          },
+          options: Options(
+            sendTimeout: _uploadTimeout,
+            receiveTimeout: _uploadTimeout,
+          ),
+        ));
+    _ensure(response, 201);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<Ride> renameRide(int id, String name) async {
     final response = await _send(
         () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}));
