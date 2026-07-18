@@ -177,6 +177,95 @@ the word carries the meaning, so it must read correctly in greyscale too.
 
 ---
 
+## Events
+
+App-native events (distinct from the read-only Audax calendar above), reached
+via the **Events** tab in the bottom navigation. No automated coverage yet —
+everything below is manual-only for now.
+
+### List / browse
+- [ ] Open the **Events** tab → events visible to you load (your own of any status, plus everyone's public + published ones).
+- [ ] Type in the search box → the list narrows after a short pause (debounced), not on every keystroke.
+- [ ] Toggle the **Mine** chip → only your own events show; toggle it off → the full visible list returns.
+- [ ] Toggle the **Upcoming** chip → events whose start date has passed drop out.
+- [ ] Tap a status chip (**Draft** / **Published** / **Cancelled** / **Completed**) → the list narrows to that status; tap it again → the filter clears.
+- [ ] Pull down to refresh → the list reloads.
+- [ ] Scroll a long list → more events load (infinite scroll).
+- [ ] No events match the current filters → an empty state shows, not a blank screen.
+- [ ] With no connection → an error state with **Try again** shows.
+- [ ] Switch to the **Rides** tab and back → the Events list is still there instantly, no reload (session cache, same idea as Audax's).
+- [ ] Open an event, go back → the list reflects any change you just made (subscribe, edit, delete) without a manual refresh.
+
+### Create
+- [ ] Tap **New event**, leave the name blank, fill in a start date, save → the event is created as **"MyEvent"**.
+- [ ] Try to save with no start date → inline error blocks it.
+- [ ] Set visibility to **Public** and try to save with no contact number → a clear error blocks it; fill in a number → it saves.
+- [ ] Set visibility to **Private** → contact number is optional.
+- [ ] Leave status at **Draft** → a note explains subscriptions open only once published.
+- [ ] Set an entry fee and currency → the event detail shows the fee formatted with that currency; leave the fee blank/0 → it shows **Free**.
+- [ ] Set a subscriber cap → the detail shows "`n` / cap subscribed"; leave it blank → shows unlimited.
+- [ ] Add a couple of external links (one per line) and remarks → both show on the detail screen; tapping a link opens it in the browser.
+- [ ] Type your own assembly point → it's saved and shown; leave it blank with a ride attached → the ride's start is shown instead (server-resolved).
+
+### Attach a route — **manual only** (native file picker / OAuth / GPS)
+- [ ] On the create/edit screen, tap **Attach a ride** → a sheet offers **Choose from my rides**, **Upload a file**, **Import from Strava**, **Import from Google Maps**.
+- [ ] **Choose from my rides** → a paginated picker of your existing rides opens → pick one → it's attached and shown on the form.
+- [ ] **Upload a file** → pick a GPX/FIT/KML → a progress dialog shows → the new ride is attached automatically once it finishes.
+- [ ] **Import from Strava** → completes the existing Strava connect/import flow unchanged → afterwards you land on the "choose from my rides" picker (since Strava can import more than one) → pick the one you want attached.
+- [ ] **Import from Google Maps** → same beta warning and link/name fields as the Rides tab's importer → imports and attaches in one step.
+- [ ] With a ride attached, tap **Change** → the sheet reopens; tap the **×** → the ride is detached and the "Attach a ride" button reappears.
+
+### Route suggestions — **manual only** (GPS permission)
+- [ ] On the create screen, tap **Find routes near me** → grant location permission → nearby curated routes load, each showing distance from you.
+- [ ] Deny/skip location permission → the panel automatically offers **Pick a city instead**; pick one → routes for that city load (no distance-from-you figure, since that's radius-only).
+- [ ] No curated routes near you / in that city → a clear "no routes" message shows, not a blank panel or crash.
+- [ ] Tap **Use this route** on a suggestion → it's copied into your own rides (**fork**) and attached to the event in one step; a confirmation snackbar names the ride.
+- [ ] The forked ride now also appears on the **Rides** tab as an ordinary ride of yours.
+- [ ] Tap **Use this route** on a suggestion you've already forked before → the server's "You already own this ride." error shows, not a crash.
+
+### Edit / delete (creator only)
+- [ ] Open an event you created → **Edit** and **Delete** icons appear in the app bar; open one you didn't create → neither appears.
+- [ ] Edit an event that has a ride attached with no user-set assembly point → the resolved (ride-derived) value is **not** silently promoted to a saved override just from opening and re-saving the form.
+- [ ] Edit and change any field → save → the detail screen reflects the change immediately.
+- [ ] Delete an event → confirmation dialog → confirm → you're returned to the list and it's gone.
+
+### Subscribe / unsubscribe
+- [ ] Open a **Draft**, **Cancelled**, or **Completed** event as a non-creator → a note says subscriptions open once published, no Subscribe button.
+- [ ] Open a **Published** event → tap **Subscribe** → a sheet offers **No checklist**, **Create a new one**, or reuse one from your library.
+- [ ] Pick **No checklist** → you're subscribed immediately; the event shows you as subscribed and the subscriber count goes up.
+- [ ] Pick **Create a new one**, name it, add a couple of items (mark one mandatory) → subscribe → it shows up under **My subscriptions** with 0/N done.
+- [ ] Pick an existing checklist from your library → subscribe → the same checklist (same items, same ticked state) is now attached here too.
+- [ ] Subscribe to an event that's already at its subscriber cap → the button reads **Event is full** and is disabled.
+- [ ] Try subscribing to the same event twice (e.g. from two devices/sessions) → the server's "already subscribed" error surfaces cleanly.
+- [ ] Tap **Leave event** on an event you're subscribed to → you're unsubscribed, the button reverts to **Subscribe**, and the subscriber count drops.
+
+### Subscribers roster (creator only)
+- [ ] As the creator, tap **View subscribers** → a roster shows the count (and cap, if set) plus each subscriber's username and join date.
+- [ ] As a non-creator, confirm there's no way to reach this screen.
+- [ ] An event with no subscribers yet → "No one has subscribed yet," not a blank list.
+
+### Checklist library
+- [ ] Events tab → ⋮ → **My checklists** → create a new checklist by name.
+- [ ] Rename a checklist, delete one (confirmation dialog) → both reflect immediately.
+- [ ] Expand a checklist → add an item, tick one off, remove one → all persist (revisit the screen to confirm).
+- [ ] Tick an item off here, then open **My subscriptions** or the subscribe sheet where the same checklist appears → it shows ticked there too (same row, reused by reference — not a copy).
+- [ ] Delete a checklist that's attached to an existing subscription → the event/subscription screens don't crash; the checklist is simply gone from them.
+
+### Waiver document — **manual only** (native file picker + cloud upload)
+- [ ] Open a **public** event you created → a waiver-document section appears; a **private** event shows no such section.
+- [ ] Tap upload, pick a PDF → a progress indicator runs → "Document uploaded" confirmation; the event card's document icon now shows on the list too.
+- [ ] As any viewer (not just the creator) of a public event with a document → tap **View** → it opens in the browser via a freshly generated link.
+- [ ] As the creator, **Replace** it with a different PDF → the old one is superseded.
+- [ ] As the creator, **Remove** it → the section reflects "no document" and non-creator viewers no longer see a **View** option.
+- [ ] Try uploading a non-PDF file, or one over the size cap → a clear error shows, no crash, no phantom "uploaded" state.
+
+### My subscriptions
+- [ ] Events tab → ⋮ → **My subscriptions** → every event you've joined is listed with its date and, if you attached one, the checklist name and done/total progress.
+- [ ] Tap one → opens that event's detail screen.
+- [ ] No subscriptions yet → an empty state shows.
+
+---
+
 ## Ride detail
 
 - [ ] Open a ride → map and stats (distance, ascent, descent, max grade) render.
@@ -265,6 +354,11 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 ---
 
 ## Cross-cutting
+
+### Bottom navigation
+- [ ] The signed-in app opens on the **Rides** tab; a bottom bar shows **Rides** and **Events**.
+- [ ] Switch to **Events** and back to **Rides** → My Rides is exactly as it was (scroll position, sort, any in-flight upload) — the tabs don't reset each other.
+- [ ] Log out from either tab, log back in → you land on **Rides** again.
 
 ### My Rides app bar
 - [ ] The bar shows only the **title, Sort (⇅), and ⋮** — nothing else competes with "My Rides", and the title isn't squeezed on a small phone.

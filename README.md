@@ -43,6 +43,37 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 
 <!-- SCREENSHOT: audax events list -->
 
+### Events
+App-native events a rider creates and others subscribe to — distinct from the
+read-only Audax calendar above. Reached via its own **Events** tab in the
+bottom navigation, alongside **My Rides**.
+
+- Browse events visible to you (your own of any status, plus everyone's public
+  + published), with search, and filter chips for **Mine**, **Upcoming**, and
+  status
+- Create or edit an event: name, date/time, private/public visibility, a
+  draft/published/cancelled/completed status, contact info (required once
+  public), entry fee + currency, a subscriber cap, external links, remarks
+- Attach a route the same three ways rides already come into the app — upload
+  a file, import from Strava, import from Google Maps — or pick one you
+  already have; nothing event-specific about any of it
+- Curated route suggestions while creating an event: a 25 km radius match from
+  your location, or a city picker if location isn't available; **"Use this
+  route"** copies a suggestion into your own rides and attaches it on the spot
+- Subscribe to a published event, optionally attaching a checklist — create a
+  fresh one or reuse one from your library; a reused checklist is the same
+  list everywhere it's attached, so ticking an item off shows up on every
+  event using it
+- Creator tools: edit or delete your event, see the subscriber roster
+- Public events only: attach a liability-waiver PDF, uploaded straight to
+  cloud storage from the device; any viewer can open it, the creator can
+  replace or remove it
+- **My subscriptions** and **My checklists** screens (⋮ menu on the Events
+  tab) round out the library side of this
+
+<!-- SCREENSHOT: events list -->
+<!-- SCREENSHOT: event detail -->
+
 ### Ride detail
 - Route map with an elevation or gradient profile chart, linked together — tapping a point on the chart highlights it on the map
 - Adjustable smoothing (50–500 m window) to trade off noise vs. detail in the elevation/gradient profile
@@ -115,6 +146,8 @@ lib/
   features/
     audax/
     auth/
+    events/
+    home/    # the bottom-nav shell (Rides / Events tabs)
     rides/
     tracking/
     weather/
@@ -122,3 +155,8 @@ lib/
 ```
 
 A file lives in `core/` if it's touched by 3+ features (or by the API client itself); otherwise it lives inside the one feature that owns it.
+
+The signed-in app is two tabs under `features/home/HomeShell` — **Rides**
+(`RidesListScreen`, unchanged) and **Events** (`features/events/`). Each tab
+keeps its own scroll position and provider state when you switch away and
+back (an `IndexedStack`, not a route swap).

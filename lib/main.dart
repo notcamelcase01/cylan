@@ -5,6 +5,8 @@ import 'core/providers/theme_provider.dart';
 import 'features/audax/providers/audax_events_cache_provider.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/auth_gate.dart';
+import 'features/events/providers/checklists_cache_provider.dart';
+import 'features/events/providers/events_cache_provider.dart';
 import 'features/rides/providers/offline_rides_provider.dart';
 import 'features/rides/providers/sections_cache_provider.dart';
 import 'features/weather/providers/weather_cache_provider.dart';
@@ -32,6 +34,8 @@ class CylanApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SectionsCacheProvider()),
         ChangeNotifierProvider(create: (_) => OfflineRidesProvider()),
         ChangeNotifierProvider(create: (_) => AudaxEventsCacheProvider()),
+        ChangeNotifierProvider(create: (_) => EventsCacheProvider()),
+        ChangeNotifierProvider(create: (_) => ChecklistsCacheProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(

@@ -6,9 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/audax_event.dart';
+import '../models/checklist.dart';
+import '../models/event.dart';
 import '../models/ride.dart';
 import '../models/ride_section.dart';
+import '../models/route_suggestion.dart';
 import '../models/strava_route.dart';
+import '../models/subscription.dart';
 import '../models/user.dart';
 import '../models/weather_point.dart';
 import 'api_exception.dart';
@@ -333,6 +337,17 @@ class ApiClient {
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Copies a curated suggestion (a ride you don't own) into your own library,
+  /// returning your new [Ride]. Only completed suggestions can be forked; the
+  /// copy is an ordinary ride you can then attach to an event, exactly like an
+  /// uploaded one. `400` if it isn't a completed suggestion or you already own
+  /// it.
+  Future<Ride> forkRide(int id) async {
+    final response = await _send(() => _dio.post<dynamic>('/rides/$id/fork/'));
+    _ensure(response, 201);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<Ride> renameRide(int id, String name) async {
     final response = await _send(
         () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}));
@@ -487,10 +502,405 @@ class ApiClient {
     _ensure(response, 200);
     return AudaxEventFilters.fromJson(response.data as Map<String, dynamic>);
   }
+
+  // --- Events (app-native, user-created) ---------------------------------
+
+  /// Events visible to the caller (own events of any status/visibility, plus
+  /// everyone's PUBLIC+PUBLISHED), newest first. [pageUrl] pages through a
+  /// prior `next`/`previous`; the filter args are ignored when it's given
+  /// (the URL already carries them). [mine] limits to the caller's own.
+  Future<EventPage> listEvents({
+    String? pageUrl,
+    bool? mine,
+    String? status,
+    String? visibility,
+    String? q,
+    String? location,
+    bool? upcoming,
+  }) async {
+    final response = await _send(() => pageUrl != null
+        ? _dio.get<dynamic>(pageUrl)
+        : _dio.get<dynamic>(
+            '/events/',
+            queryParameters: {
+              if (mine == true) 'mine': 'true',
+              if (status != null && status.isNotEmpty) 'status': status,
+              if (visibility != null && visibility.isNotEmpty)
+                'visibility': visibility,
+              if (q != null && q.isNotEmpty) 'q': q,
+              if (location != null && location.isNotEmpty) 'location': location,
+              if (upcoming == true) 'upcoming': 'true',
+            },
+          ));
+    _ensure(response, 200);
+    return EventPage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<Event> getEvent(int id) async {
+    final response = await _send(() => _dio.get<dynamic>('/events/$id/'));
+    _ensure(response, 200);
+    return Event.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Creates an event from a body the caller assembles (all fields optional
+  /// except `start_date`). A raw map rather than typed params because several
+  /// fields carry meaning in their explicit value — `entry_fee: 0` = free,
+  /// `max_subscribers: null` = unlimited — that the form fills in directly.
+  /// Returns the full [Event] detail (`201`).
+  Future<Event> createEvent(Map<String, dynamic> data) async {
+    final response =
+        await _send(() => _dio.post<dynamic>('/events/', data: data));
+    _ensure(response, 201);
+    return Event.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Updates an event (creator only). PATCH semantics: only the keys present
+  /// in [data] change, so the caller sends exactly what it means to set —
+  /// including an explicit `null` to clear the attached ride or the subscriber
+  /// cap. Returns the updated [Event] detail.
+  Future<Event> updateEvent(int id, Map<String, dynamic> data) async {
+    final response =
+        await _send(() => _dio.patch<dynamic>('/events/$id/', data: data));
+    _ensure(response, 200);
+    return Event.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteEvent(int id) async {
+    final response = await _send(() => _dio.delete<dynamic>('/events/$id/'));
+    _ensure(response, 204);
+  }
+
+  /// Subscribes to a published event, optionally attaching a checklist: an
+  /// existing one by [checklistId], or a brand-new one from [newChecklistName]
+  /// + [newChecklistItems] (created server-side in the same call). Pass none of
+  /// them to subscribe without a checklist. Returns the new [Subscription]
+  /// (`201`).
+  Future<Subscription> subscribeToEvent(
+    int eventId, {
+    int? checklistId,
+    String? newChecklistName,
+    List<({String text, bool isMandatory})>? newChecklistItems,
+  }) async {
+    final Map<String, dynamic> body;
+    if (checklistId != null) {
+      body = {'checklist_id': checklistId};
+    } else if (newChecklistName != null) {
+      body = {
+        'new_checklist': {
+          'name': newChecklistName,
+          'items': [
+            for (final it in newChecklistItems ?? const [])
+              {'text': it.text, 'is_mandatory': it.isMandatory},
+          ],
+        },
+      };
+    } else {
+      body = const {};
+    }
+    final response = await _send(
+        () => _dio.post<dynamic>('/events/$eventId/subscribe/', data: body));
+    _ensure(response, 201);
+    return Subscription.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> unsubscribeFromEvent(int eventId) async {
+    final response = await _send(
+        () => _dio.delete<dynamic>('/events/$eventId/subscribe/'));
+    _ensure(response, 204);
+  }
+
+  /// The creator-only roster for an event. `403` (surfaced as an
+  /// [ApiException]) if the caller isn't the creator.
+  Future<EventRoster> getEventSubscribers(int eventId) async {
+    final response =
+        await _send(() => _dio.get<dynamic>('/events/$eventId/subscribers/'));
+    _ensure(response, 200);
+    return EventRoster.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // --- Event waiver document (public events, S3 presigned upload) ---------
+
+  /// Asks the server for a presigned S3 POST so the client can upload the
+  /// event's waiver PDF straight to S3 (the bytes never touch our backend).
+  /// Creator + public events only.
+  Future<EventDocumentPresign> presignEventDocument(int eventId) async {
+    final response = await _send(
+        () => _dio.post<dynamic>('/events/$eventId/document/presign/'));
+    _ensure(response, 200);
+    return EventDocumentPresign.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Uploads [filePath] directly to S3 using a presign from
+  /// [presignEventDocument]. Goes to S3's host, not our API, so it uses a bare
+  /// Dio with no `baseUrl` and no auth interceptor. S3's presigned POST
+  /// requires the policy [EventDocumentPresign.fields] *before* the file part,
+  /// and answers `204` with no body on success.
+  Future<void> uploadEventDocument(
+    EventDocumentPresign presign,
+    String filePath, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final formData = FormData.fromMap({
+      ...presign.fields,
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final s3 = Dio(BaseOptions(
+      sendTimeout: _uploadTimeout,
+      receiveTimeout: _uploadTimeout,
+      validateStatus: (_) => true,
+    ));
+    try {
+      final response = await _send(() => s3.post<dynamic>(
+            presign.url,
+            data: formData,
+            onSendProgress: onProgress,
+          ));
+      // S3 returns 204 (no redirect) when the presign's success_action_status
+      // isn't overridden, which the backend leaves at its default.
+      if (response.statusCode != 204 && response.statusCode != 201) {
+        throw ApiException(
+          'The upload was rejected by storage (${response.statusCode}).',
+          statusCode: response.statusCode,
+        );
+      }
+    } finally {
+      s3.close();
+    }
+  }
+
+  /// Tells the backend the S3 upload finished so it records the key on the
+  /// event. Returns the updated [Event] detail.
+  Future<Event> confirmEventDocument(int eventId) async {
+    final response =
+        await _send(() => _dio.post<dynamic>('/events/$eventId/document/'));
+    _ensure(response, 200);
+    return Event.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// A short-lived (5 min) presigned URL to read the event's waiver PDF —
+  /// fetch on demand each time, don't cache it. `404` if there's none.
+  Future<String> getEventDocumentUrl(int eventId) async {
+    final response =
+        await _send(() => _dio.get<dynamic>('/events/$eventId/document/'));
+    _ensure(response, 200);
+    return (response.data as Map<String, dynamic>)['url'] as String;
+  }
+
+  Future<void> deleteEventDocument(int eventId) async {
+    final response =
+        await _send(() => _dio.delete<dynamic>('/events/$eventId/document/'));
+    _ensure(response, 204);
+  }
+
+  // --- Route suggestions (for event creation) ----------------------------
+
+  /// Curated routes to suggest. Provide [lat] & [lng] together for the primary
+  /// 25 km radius match, or [city] for the dropdown fallback (one or the
+  /// other). [SuggestionsResult.mode] says which path answered.
+  Future<SuggestionsResult> getRouteSuggestions({
+    double? lat,
+    double? lng,
+    String? city,
+    int? limit,
+  }) async {
+    final response = await _send(() => _dio.get<dynamic>(
+          '/events/suggestions/',
+          queryParameters: {
+            'lat': ?lat,
+            'lng': ?lng,
+            if (city != null && city.isNotEmpty) 'city': city,
+            'limit': ?limit,
+          },
+        ));
+    _ensure(response, 200);
+    return SuggestionsResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Distinct city labels among curated rides — the fallback dropdown options
+  /// when geolocation isn't available.
+  Future<List<String>> getSuggestionLocations() async {
+    final response =
+        await _send(() => _dio.get<dynamic>('/events/suggestions/locations/'));
+    _ensure(response, 200);
+    return ((response.data as Map<String, dynamic>)['locations'] as List<dynamic>)
+        .map((e) => e.toString())
+        .toList();
+  }
+
+  /// Opts one of the caller's rides into the curated-suggestion pool (moves it
+  /// to staff review). Returns the ride's new `public_suggestion_status`
+  /// (`202`). `409` if it's already approved.
+  Future<String> suggestRidePublic(int rideId, String description) async {
+    final response = await _send(() => _dio.post<dynamic>(
+          '/rides/$rideId/suggest/',
+          data: {'description': description},
+        ));
+    _ensure(response, 202);
+    return (response.data as Map<String, dynamic>)['public_suggestion_status']
+        .toString();
+  }
+
+  // --- Checklists (the rider's reusable library) -------------------------
+
+  /// One page of the rider's checklists. [pageUrl] pages through a prior
+  /// `next`. The library is usually small; [fetchAllChecklists] wraps this to
+  /// pull every page.
+  Future<ChecklistPage> listChecklists({String? pageUrl}) async {
+    final response =
+        await _send(() => _dio.get<dynamic>(pageUrl ?? '/checklists/'));
+    _ensure(response, 200);
+    return ChecklistPage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Every checklist the rider owns, paging through until the list ends —
+  /// the library is personal and small, so the picker/library screens want it
+  /// whole rather than paginated.
+  Future<List<Checklist>> fetchAllChecklists() async {
+    final all = <Checklist>[];
+    String? pageUrl;
+    do {
+      final page = await listChecklists(pageUrl: pageUrl);
+      all.addAll(page.results);
+      pageUrl = page.next;
+    } while (pageUrl != null);
+    return all;
+  }
+
+  /// Creates a checklist, optionally seeded with [items]. Returns it (`201`).
+  Future<Checklist> createChecklist(
+    String name, {
+    List<({String text, bool isMandatory})>? items,
+  }) async {
+    final response = await _send(() => _dio.post<dynamic>(
+          '/checklists/',
+          data: {
+            'name': name,
+            if (items != null)
+              'items': [
+                for (final it in items)
+                  {'text': it.text, 'is_mandatory': it.isMandatory},
+              ],
+          },
+        ));
+    _ensure(response, 201);
+    return Checklist.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Renames a checklist and/or replaces its whole item set (sending [items]
+  /// is replace-all, matching the server). Returns the updated checklist.
+  Future<Checklist> updateChecklist(
+    int id, {
+    String? name,
+    List<({String text, bool isMandatory, bool isDone})>? items,
+  }) async {
+    final response = await _send(() => _dio.patch<dynamic>(
+          '/checklists/$id/',
+          data: {
+            'name': ?name,
+            if (items != null)
+              'items': [
+                for (final it in items)
+                  {
+                    'text': it.text,
+                    'is_mandatory': it.isMandatory,
+                    'is_done': it.isDone,
+                  },
+              ],
+          },
+        ));
+    _ensure(response, 200);
+    return Checklist.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteChecklist(int id) async {
+    final response = await _send(() => _dio.delete<dynamic>('/checklists/$id/'));
+    _ensure(response, 204);
+  }
+
+  /// Adds one item to a checklist. Returns the created item (`201`).
+  Future<ChecklistItem> addChecklistItem(
+    int checklistId, {
+    required String text,
+    bool isMandatory = false,
+    bool isDone = false,
+  }) async {
+    final response = await _send(() => _dio.post<dynamic>(
+          '/checklists/$checklistId/items/',
+          data: {
+            'text': text,
+            'is_mandatory': isMandatory,
+            'is_done': isDone,
+          },
+        ));
+    _ensure(response, 201);
+    return ChecklistItem.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Edits one item — e.g. ticking it off ([isDone]). Because a checklist is
+  /// reused by reference, this shows on every event it's attached to. Returns
+  /// the updated item.
+  Future<ChecklistItem> updateChecklistItem(
+    int itemId, {
+    String? text,
+    bool? isMandatory,
+    bool? isDone,
+  }) async {
+    final response = await _send(() => _dio.patch<dynamic>(
+          '/checklist-items/$itemId/',
+          data: {
+            'text': ?text,
+            'is_mandatory': ?isMandatory,
+            'is_done': ?isDone,
+          },
+        ));
+    _ensure(response, 200);
+    return ChecklistItem.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteChecklistItem(int itemId) async {
+    final response =
+        await _send(() => _dio.delete<dynamic>('/checklist-items/$itemId/'));
+    _ensure(response, 204);
+  }
+
+  // --- Subscriptions -----------------------------------------------------
+
+  /// One page of the rider's subscriptions, each with its embedded event and
+  /// chosen checklist. [pageUrl] pages through a prior `next`.
+  Future<SubscriptionPage> listMySubscriptions({String? pageUrl}) async {
+    final response =
+        await _send(() => _dio.get<dynamic>(pageUrl ?? '/subscriptions/'));
+    _ensure(response, 200);
+    return SubscriptionPage.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 class StravaImportResult {
   final List<Ride> imported;
   final List<String> failures;
   const StravaImportResult({required this.imported, required this.failures});
+}
+
+/// Presigned-POST parameters for uploading an event's waiver PDF straight to
+/// S3 ([ApiClient.presignEventDocument]). [fields] are S3's policy fields that
+/// must be sent as multipart parts *before* the file; [key] is the object key
+/// the backend records on confirm.
+class EventDocumentPresign {
+  final String url;
+  final Map<String, String> fields;
+  final String key;
+
+  const EventDocumentPresign({
+    required this.url,
+    required this.fields,
+    required this.key,
+  });
+
+  factory EventDocumentPresign.fromJson(Map<String, dynamic> json) =>
+      EventDocumentPresign(
+        url: json['url'] as String,
+        fields: (json['fields'] as Map<String, dynamic>)
+            .map((k, v) => MapEntry(k, v.toString())),
+        key: json['key'] as String,
+      );
 }

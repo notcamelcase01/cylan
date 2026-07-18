@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../rides/screens/rides_list_screen.dart';
+import '../../home/home_shell.dart';
 import '../providers/auth_provider.dart';
 import 'landing_screen.dart';
 
@@ -30,7 +30,7 @@ class _AuthGateState extends State<AuthGate> {
           body: Center(child: CircularProgressIndicator()),
         );
       case AuthStatus.authenticated:
-        return const RidesListScreen();
+        return const HomeShell();
       case AuthStatus.unauthenticated:
         return const LandingScreen();
     }
