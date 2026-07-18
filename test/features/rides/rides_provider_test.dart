@@ -20,12 +20,32 @@ class _FakeApi implements ApiClient {
   /// *which* page a later request continues from.
   final List<String?> calls = [];
 
+  /// The `search` term each page-1 call carried — parallels [calls], so a test
+  /// can prove the query reaches the API.
+  final List<String?> searches = [];
+
   @override
-  Future<RidePage> listRides({String? pageUrl}) {
+  Future<RidePage> listRides({String? pageUrl, String? search, bool? suggested}) {
     calls.add(pageUrl);
+    searches.add(search);
     final completer = Completer<RidePage>();
     pending.add(completer);
     return completer.future;
+  }
+
+  /// What `suggestRidePublic` returns next, or an [Object] to throw — same
+  /// shape as [googleMapsResult].
+  Object? suggestResult;
+  int? lastSuggestedRideId;
+  String? lastSuggestedDescription;
+
+  @override
+  Future<String> suggestRidePublic(int rideId, String description) async {
+    lastSuggestedRideId = rideId;
+    lastSuggestedDescription = description;
+    final result = suggestResult;
+    if (result is String) return result;
+    throw result ?? StateError('suggestResult not set for this test');
   }
 
   /// What `importFromGoogleMaps` does next: a [Ride] to succeed with, or any
@@ -165,6 +185,41 @@ void main() {
     });
   });
 
+  group('Name search', () {
+    test('setQuery reloads page 1 with the trimmed term', () async {
+      final api = _FakeApi();
+      final provider = RidesProvider(api: api);
+
+      final initial = provider.loadFirst();
+      api.pending[0].complete(_page([_ride(1, 'a')]));
+      await initial;
+      expect(api.searches.last, isNull, reason: 'first load carried no query');
+
+      final searched = provider.setQuery('  sunday  ');
+      api.pending[1].complete(_page([_ride(2, 'Sunday loop')]));
+      await searched;
+
+      expect(provider.query, 'sunday', reason: 'the term is trimmed');
+      expect(provider.hasQuery, isTrue);
+      expect(api.searches.last, 'sunday');
+      expect(_names(provider), ['Sunday loop']);
+    });
+
+    test('setQuery with an unchanged term does not refetch', () async {
+      final api = _FakeApi();
+      final provider = RidesProvider(api: api);
+
+      final searched = provider.setQuery('hills');
+      api.pending[0].complete(_page([_ride(1, 'Hill repeats')]));
+      await searched;
+      final callsAfterFirst = api.calls.length;
+
+      // Same term (a debounced field re-firing the identical value): no-op.
+      await provider.setQuery('hills');
+      expect(api.calls.length, callsAfterFirst);
+    });
+  });
+
   group('Google Maps import', () {
     test('a successful import prepends the new ride and clears any error',
         () async {
@@ -206,6 +261,74 @@ void main() {
 
       expect(ride, isNull);
       expect(provider.error, isNotNull);
+    });
+  });
+
+  group('Suggest public / patchSuggestionStatus', () {
+    test('a successful suggest patches the ride in place', () async {
+      final api = _FakeApi()..suggestResult = 'PENDING';
+      final provider = RidesProvider(api: api);
+
+      final initial = provider.loadFirst();
+      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      await initial;
+      expect(provider.rides.single.publicSuggestionStatus, 'NONE');
+
+      final ok = await provider.suggestPublic(1, 'A nice loop');
+
+      expect(ok, isTrue);
+      expect(api.lastSuggestedRideId, 1);
+      expect(api.lastSuggestedDescription, 'A nice loop');
+      expect(provider.rides.single.publicSuggestionStatus, 'PENDING');
+    });
+
+    test('a failed suggest leaves the ride untouched and surfaces the error',
+        () async {
+      final api = _FakeApi()
+        ..suggestResult = ApiException('This ride is already an approved suggestion.');
+      final provider = RidesProvider(api: api);
+
+      final initial = provider.loadFirst();
+      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      await initial;
+
+      final ok = await provider.suggestPublic(1, '');
+
+      expect(ok, isFalse);
+      expect(provider.error, contains('already an approved suggestion'));
+      expect(provider.rides.single.publicSuggestionStatus, 'NONE');
+    });
+
+    test('patchSuggestionStatus updates a loaded ride and notifies', () async {
+      final api = _FakeApi();
+      final provider = RidesProvider(api: api);
+
+      final initial = provider.loadFirst();
+      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      await initial;
+
+      var notified = 0;
+      provider.addListener(() => notified++);
+
+      provider.patchSuggestionStatus(1, 'COMPLETED');
+      expect(provider.rides.single.publicSuggestionStatus, 'COMPLETED');
+      expect(notified, 1);
+    });
+
+    test('patchSuggestionStatus is a no-op for a ride not currently loaded',
+        () async {
+      final api = _FakeApi();
+      final provider = RidesProvider(api: api);
+
+      final initial = provider.loadFirst();
+      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      await initial;
+
+      var notified = 0;
+      provider.addListener(() => notified++);
+
+      provider.patchSuggestionStatus(999, 'COMPLETED');
+      expect(notified, 0);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,31 +11,31 @@ import '../../audax/screens/audax_events_screen.dart';
 import '../../auth/screens/profile_screen.dart';
 import '../../weather/providers/weather_cache_provider.dart';
 import '../providers/rides_provider.dart';
+import '../providers/suggested_rides_provider.dart';
+import '../widgets/suggestion_status_chip.dart';
 import 'offline_rides_screen.dart';
 import 'ride_detail_screen.dart';
 import 'strava_import_screen.dart';
 
-class RidesListScreen extends StatelessWidget {
+/// The Rides tab. Its [RidesProvider] is app-level (see `main.dart`), not
+/// created here, so a ride copied in from an event's route can refresh this
+/// list and it survives tab switches. This screen owns the *session* lifecycle:
+/// it reloads page 1 on mount, and the shell (hence this screen) is rebuilt on
+/// each sign-in, so a fresh login never shows the previous rider's rides.
+class RidesListScreen extends StatefulWidget {
   const RidesListScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => RidesProvider()..loadFirst(),
-      child: const _RidesListView(),
-    );
-  }
+  State<RidesListScreen> createState() => _RidesListScreenState();
 }
 
-class _RidesListView extends StatefulWidget {
-  const _RidesListView();
-
-  @override
-  State<_RidesListView> createState() => _RidesListViewState();
-}
-
-class _RidesListViewState extends State<_RidesListView> {
+class _RidesListScreenState extends State<RidesListScreen> {
   final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+
+  static const _searchDebounce = Duration(milliseconds: 350);
+  Timer? _searchTimer;
+
   bool _uploading = false;
   bool _importingGoogleMaps = false;
 
@@ -48,12 +50,25 @@ class _RidesListViewState extends State<_RidesListView> {
         context.read<RidesProvider>().loadMore();
       }
     });
+    // Reload page 1 for this session. Post-frame because loadFirst notifies
+    // synchronously, which can't happen during the first build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<RidesProvider>().loadFirst();
+    });
   }
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+    _searchTimer =
+        Timer(_searchDebounce, () => context.read<RidesProvider>().setQuery(value));
   }
 
   Future<void> _showImportOptions() async {
@@ -224,6 +239,30 @@ class _RidesListViewState extends State<_RidesListView> {
     return confirmed ?? false;
   }
 
+  Future<void> _makeRidePublic(Ride ride) async {
+    final description = await showDialog<String>(
+      context: context,
+      builder: (context) => _SuggestRideDialog(rideName: ride.name),
+    );
+    if (description == null || !mounted) return;
+
+    final ok = await context.read<RidesProvider>().suggestPublic(ride.id, description);
+    if (!mounted) return;
+    if (ok) {
+      // The Public Rides tab is app-level too, so refresh it here — the ride
+      // now belongs there and should show up without a manual pull.
+      context.read<SuggestedRidesProvider>().refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"${ride.name}" was submitted for review.')),
+      );
+    } else {
+      final error = context.read<RidesProvider>().error;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error ?? "Couldn't submit that ride.")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ridesProvider = context.watch<RidesProvider>();
@@ -336,6 +375,22 @@ class _RidesListViewState extends State<_RidesListView> {
 
   Widget _buildBody(
       BuildContext context, RidesProvider provider, WeatherCacheProvider weatherCache) {
+    // Show the search field once the rider has rides, or has a query active (so
+    // an empty result stays clearable). Hidden for a brand-new, empty library,
+    // where the "No rides yet" prompt carries the screen.
+    final showSearch = provider.rides.isNotEmpty || provider.hasQuery;
+    return Column(
+      children: [
+        if (showSearch)
+          _SearchField(
+              controller: _searchController, onChanged: _onSearchChanged),
+        Expanded(child: _content(context, provider, weatherCache)),
+      ],
+    );
+  }
+
+  Widget _content(
+      BuildContext context, RidesProvider provider, WeatherCacheProvider weatherCache) {
     if (provider.isLoading && provider.rides.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -361,6 +416,32 @@ class _RidesListViewState extends State<_RidesListView> {
       );
     }
     if (provider.rides.isEmpty) {
+      // An active search that matched nothing reads differently from an empty
+      // library — don't tell a rider with 50 rides to "upload their first".
+      if (provider.hasQuery) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off,
+                  size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text('No rides match "${provider.query}"',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  _searchTimer?.cancel();
+                  _searchController.clear();
+                  context.read<RidesProvider>().setQuery('');
+                },
+                child: const Text('Clear search'),
+              ),
+            ],
+          ),
+        );
+      }
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -478,6 +559,10 @@ class _RidesListViewState extends State<_RidesListView> {
                           ],
                         ),
                       ),
+                      if (ride.isSuggested) ...[
+                        SuggestionStatusChip(status: ride.publicSuggestionStatus),
+                        const SizedBox(width: 6),
+                      ],
                       if (weather != null) ...[
                         Text(weather.icon, style: const TextStyle(fontSize: 18)),
                         const SizedBox(width: 2),
@@ -490,10 +575,23 @@ class _RidesListViewState extends State<_RidesListView> {
                       ],
                       PopupMenuButton<String>(
                         onSelected: (value) {
-                          if (value == 'rename') _renameRide(ride);
+                          switch (value) {
+                            case 'rename':
+                              _renameRide(ride);
+                            case 'make_public':
+                              _makeRidePublic(ride);
+                          }
                         },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                          // Once opted in, the ride is managed from the Public
+                          // Rides tab instead — no second place to do the same
+                          // thing.
+                          if (!ride.isSuggested)
+                            const PopupMenuItem(
+                              value: 'make_public',
+                              child: Text('Make ride public'),
+                            ),
                         ],
                       ),
                     ],
@@ -616,6 +714,140 @@ class _GoogleMapsImportDialogState extends State<_GoogleMapsImportDialog> {
         FilledButton(
           onPressed: _submit,
           child: const Text('Import'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Debounced name-search box for the rides list. Rebuilds on its own text
+/// changes (via [AnimatedBuilder] on the controller) so the clear button
+/// appears/disappears without lifting the text into screen state.
+class _SearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  const _SearchField({required this.controller, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => TextField(
+          controller: controller,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search rides',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: controller.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged('');
+                    },
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Collects the optional description for "Make ride public", with the
+/// suggestion-review disclaimer shown up front — styled like
+/// [_GoogleMapsImportDialog]'s beta-warning banner. Pops the (possibly empty)
+/// description string on submit, or null on cancel.
+class _SuggestRideDialog extends StatefulWidget {
+  final String rideName;
+  const _SuggestRideDialog({required this.rideName});
+
+  @override
+  State<_SuggestRideDialog> createState() => _SuggestRideDialogState();
+}
+
+class _SuggestRideDialogState extends State<_SuggestRideDialog> {
+  final _descriptionController = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    Navigator.pop(context, _descriptionController.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Make ride public'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('"${widget.rideName}"', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 20, color: theme.colorScheme.onTertiaryContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This route will be suggested to nearby riders creating '
+                      "events. It's reviewed before going live, and you can "
+                      'remove it from the Public Rides tab any time.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _descriptionController,
+              maxLines: 3,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                labelText: 'Short description (optional)',
+                hintText: 'What makes this route worth riding?',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          child: _submitting
+              ? const SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Submit'),
         ),
       ],
     );

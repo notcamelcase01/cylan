@@ -21,6 +21,13 @@ class RidesProvider extends ChangeNotifier {
   String? error;
   RideSort sort = RideSort.newest;
 
+  /// Server-side name search sent with [loadFirst]. The `next` URL carries it
+  /// forward, so [loadMore] keeps the filter without re-sending it. Empty means
+  /// "all rides".
+  String _query = '';
+  String get query => _query;
+  bool get hasQuery => _query.isNotEmpty;
+
   /// Bumped by every [loadFirst], and captured by each in-flight request so a
   /// response can tell whether the list it was built against still exists.
   ///
@@ -71,7 +78,7 @@ class RidesProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final page = await _api.listRides();
+      final page = await _api.listRides(search: _query.isEmpty ? null : _query);
       if (generation != _generation) return;
       _rides = page.results;
       _nextUrl = page.next;
@@ -126,6 +133,16 @@ class RidesProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() => loadFirst();
+
+  /// Sets the name-search term and reloads page 1. No-op (returns the current
+  /// list unchanged) when the term hasn't changed, so a debounced field that
+  /// re-fires the same value doesn't refetch.
+  Future<void> setQuery(String value) {
+    final trimmed = value.trim();
+    if (trimmed == _query) return Future.value();
+    _query = trimmed;
+    return loadFirst();
+  }
 
   /// Fraction of the current upload that has been sent (0-1), or null when
   /// nothing is uploading or the file's total size isn't known.
@@ -216,5 +233,32 @@ class RidesProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Opts [id] into the curated-suggestion pool (`NONE → PENDING`), storing
+  /// [description] as the rider's note. On success, patches the local copy so
+  /// the ride's menu/chip update immediately without a refetch.
+  Future<bool> suggestPublic(int id, String description) async {
+    try {
+      final newStatus = await _api.suggestRidePublic(id, description);
+      patchSuggestionStatus(id, newStatus);
+      return true;
+    } on ApiException catch (e) {
+      error = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Local-only patch of a ride's [Ride.publicSuggestionStatus] — no network
+  /// call. Used both by [suggestPublic] and by the Public Rides tab after it
+  /// reverts a ride, so this list stays in sync with a change made elsewhere.
+  /// No-op if [id] isn't currently loaded here.
+  void patchSuggestionStatus(int id, String status) {
+    final index = _rides.indexWhere((r) => r.id == id);
+    if (index == -1 || _rides[index].publicSuggestionStatus == status) return;
+    _rides = [..._rides];
+    _rides[index] = _rides[index].copyWith(publicSuggestionStatus: status);
+    notifyListeners();
   }
 }

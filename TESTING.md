@@ -71,6 +71,21 @@ they pull in opposite directions.
 - [ ] Swipe a ride left → confirm the delete dialog → ride is removed.
 - [ ] Ride card menu → **Rename** → new name is saved and shown.
 
+### Make ride public / Public Rides tab
+Curated-suggestion opt-in (`POST`/`DELETE /rides/{id}/suggest/`) — surfaces the
+ride to nearby event creators once staff approve it.
+
+- [ ] Ride card menu → **Make ride public** → a dialog shows the disclaimer ("suggested to nearby riders creating events… reviewed before going live") and an optional description field.
+- [ ] Submit with no description → still succeeds; submit with one → it's saved (visible in Django admin as the ride's `description`).
+- [ ] After submitting → a **Pending review** chip appears on the card in **My Rides**, and **Make ride public** no longer appears in that card's menu.
+- [ ] Switch to the **Public** tab → the ride appears there with the same **Pending review** chip, without needing to pull-to-refresh.
+- [ ] On the Public tab, tap a ride's ⋮ → **Remove from public suggestions** → confirmation dialog → confirm → the ride disappears from this list.
+- [ ] Switch back to **My Rides** → that ride's chip is gone and **Make ride public** is available again on its menu, with no manual refresh needed.
+- [ ] Approve a ride as a curated suggestion in Django admin (`public_suggestion_status → COMPLETED`) → reopen the Public tab (pull-to-refresh) → the chip reads **Public** instead of **Pending review**.
+- [ ] Remove a **Public** (approved) ride from suggestions → it disappears from the Public tab, and its `visibility` reverts to Private unless it's also attached to a public event (spot-check via the ride's own detail screen / admin).
+- [ ] Public tab, empty state (no rides opted in) → "No public suggestions yet" prompt shows, pointing back to the Rides tab's ⋮ menu.
+- [ ] Public tab supports pull-to-refresh and infinite scroll like My Rides.
+
 ### Upload — **manual only** (native file picker)
 - [ ] Tap **Add ride** → **Upload a file** → pick a valid **GPX** → ride imports and appears in the list.
 - [ ] Repeat with a **FIT** file.
@@ -387,9 +402,9 @@ Needs real movement, or a mocked GPS feed, to exercise fully.
 ## Cross-cutting
 
 ### Bottom navigation
-- [ ] The signed-in app opens on the **Rides** tab; a bottom bar shows **Rides** and **Events**.
-- [ ] Switch to **Events** and back to **Rides** → My Rides is exactly as it was (scroll position, sort, any in-flight upload) — the tabs don't reset each other.
-- [ ] Log out from either tab, log back in → you land on **Rides** again.
+- [ ] The signed-in app opens on the **Rides** tab; a bottom bar shows **Rides**, **Events**, and **Public**.
+- [ ] Switch between all three tabs and back → each is exactly as it was (scroll position, sort, any in-flight upload, loaded pages) — the tabs don't reset each other.
+- [ ] Log out from any tab, log back in → you land on **Rides** again.
 
 ### My Rides app bar
 - [ ] The bar shows only the **title, Sort (⇅), and ⋮** — nothing else competes with "My Rides", and the title isn't squeezed on a small phone.
@@ -450,14 +465,14 @@ flutter test --plain-name "a 401 detail body carries its status code through"
 something like:
 
 ```
-00:04 +44: All tests passed!
+00:01 +54: All tests passed!
 ```
 
-The `+44` is the number of **individual tests** that passed — not files, not
-features. So `flutter test` reporting `+44` and
+The `+54` is the number of **individual tests** that passed — not files, not
+features. So `flutter test` reporting `+54` and
 `flutter test test/core/api/api_client_test.dart` reporting `+14` aren't in
 conflict: the second is just the 14 tests that live in that one file. Today
-the 44 break down as **14 + 7 + 2 + 7 + 6 + 7 + 1** across the seven files
+the 54 break down as **14 + 13 + 4 + 2 + 7 + 7 + 6 + 1** across the eight files
 below.
 
 A failure looks like `+15 -1:` (fifteen passed, one failed), prints the
@@ -486,7 +501,7 @@ all still run — only the network is faked.
   route outside India) surfaces its server message rather than throwing a raw
   type; a dropped connection resolves to an `ApiException`, not a hang.
 
-### `test/features/rides/rides_provider_test.dart` — 7 tests
+### `test/features/rides/rides_provider_test.dart` — 13 tests
 
 Request races on the rides list. These stage two overlapping requests and
 settle them **in the wrong order on purpose** — the thing you can't do by hand.
@@ -501,6 +516,21 @@ India) surfaces its message without adding a phantom ride; and — since not
 every failure arrives as an `ApiException` (a 2xx with an unexpected body
 shape, say) — an arbitrary unanticipated exception is still caught rather
 than crashing the caller or stranding its busy flag.
+
+And "Make ride public" (`suggestPublic`/`patchSuggestionStatus`): a successful
+suggest patches the ride's status in place without a refetch; a failed one
+(e.g. the server's 409 "already approved") leaves the ride untouched and
+surfaces the message; `patchSuggestionStatus` — the local-only sync used when
+the Public Rides tab reverts a ride elsewhere — updates a loaded ride and
+notifies, and is a no-op (no spurious rebuild) for a ride not currently loaded.
+
+### `test/features/rides/suggested_rides_provider_test.dart` — 4 tests
+
+The Public Rides tab's list. Covers: `loadFirst` asks the API for
+`suggested=true`; a successful `unsuggest` removes the ride from the list; a
+failed one leaves the list untouched and surfaces the error; and — same
+rationale as `RidesProvider.loadFirst` — a 200 with an unexpected body shape
+is caught rather than reading as "no public suggestions".
 
 ### `test/features/rides/offline_rides_provider_test.dart` — 2 tests
 

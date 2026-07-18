@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/models/event.dart';
 import '../../../core/models/checklist.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../rides/providers/rides_provider.dart';
 import '../../rides/screens/ride_detail_screen.dart';
 import '../providers/checklists_cache_provider.dart';
 import '../providers/event_detail_provider.dart';
@@ -141,6 +142,9 @@ class _EventDetailViewState extends State<_EventDetailView> {
       return;
     }
     final ride = result.ride!;
+    // The Rides tab's provider is app-level, so refresh it here — the copy now
+    // lives in the rider's library and should show there without a manual pull.
+    context.read<RidesProvider>().refresh();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('"${ride.name}" was added to your rides.'),

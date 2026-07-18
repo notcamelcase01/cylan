@@ -274,10 +274,24 @@ class ApiClient {
     return AppUser.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// [pageUrl] is an absolute `next`/`previous` URL from a prior page; Dio
-  /// leaves an absolute path alone rather than pasting it onto [baseUrl].
-  Future<RidePage> listRides({String? pageUrl}) async {
-    final response = await _send(() => _dio.get<dynamic>(pageUrl ?? '/rides/'));
+  /// The rider's own rides, newest first, paginated (10/page server-side).
+  /// [search] filters by a case-insensitive substring of the ride name.
+  /// [suggested] limits to rides opted into the curated-suggestion pool
+  /// (`public_suggestion_status != NONE`) — the Public Rides tab.
+  /// [pageUrl] is an absolute `next`/`previous` URL from a prior page (which
+  /// already carries the search/suggested filters, so those are ignored when
+  /// it's given); Dio leaves an absolute path alone rather than pasting it
+  /// onto [baseUrl].
+  Future<RidePage> listRides({String? pageUrl, String? search, bool? suggested}) async {
+    final response = await _send(() => pageUrl != null
+        ? _dio.get<dynamic>(pageUrl)
+        : _dio.get<dynamic>(
+            '/rides/',
+            queryParameters: {
+              if (search != null && search.isNotEmpty) 'search': search,
+              if (suggested == true) 'suggested': 'true',
+            },
+          ));
     _ensure(response, 200);
     return RidePage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -751,6 +765,16 @@ class ApiClient {
     _ensure(response, 202);
     return (response.data as Map<String, dynamic>)['public_suggestion_status']
         .toString();
+  }
+
+  /// Opts a ride back out of the curated-suggestion pool (`→ NONE`) — the
+  /// Public Rides tab's "remove from public suggestions". Idempotent
+  /// server-side: safe to call on a ride that's `PENDING`, `COMPLETED`, or
+  /// already `NONE`.
+  Future<void> unsuggestRide(int rideId) async {
+    final response =
+        await _send(() => _dio.delete<dynamic>('/rides/$rideId/suggest/'));
+    _ensure(response, 204);
   }
 
   // --- Checklists (the rider's reusable library) -------------------------

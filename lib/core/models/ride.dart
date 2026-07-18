@@ -26,7 +26,19 @@ class Ride {
   final RideProfile? profile;
   final double smoothingWindowM;
 
+  /// `NONE` | `PENDING` | `COMPLETED` — the curated-suggestion opt-in flag.
+  /// **Read-only, derived server-side**, like [visibility] — see
+  /// `POST`/`DELETE /rides/{id}/suggest/` in the API's events.md.
+  final String publicSuggestionStatus;
+
+  /// The rider's optional note from opting in, set via `POST .../suggest/`.
+  /// Blank if never submitted.
+  final String description;
+
   bool get isPublic => visibility == 'PUBLIC';
+  bool get isSuggested => publicSuggestionStatus != 'NONE';
+  bool get isSuggestionPending => publicSuggestionStatus == 'PENDING';
+  bool get isSuggestionApproved => publicSuggestionStatus == 'COMPLETED';
 
   Ride({
     required this.id,
@@ -48,7 +60,35 @@ class Ride {
     this.originalFilename,
     this.profile,
     this.smoothingWindowM = 30.0,
+    this.publicSuggestionStatus = 'NONE',
+    this.description = '',
   });
+
+  /// A copy with [publicSuggestionStatus] overridden — used to patch a ride's
+  /// suggestion status locally after `suggest`/`unsuggest` without refetching.
+  Ride copyWith({String? publicSuggestionStatus}) => Ride(
+        id: id,
+        name: name,
+        sourceFormat: sourceFormat,
+        recordedAt: recordedAt,
+        createdAt: createdAt,
+        distanceKm: distanceKm,
+        distanceM: distanceM,
+        totalAscentM: totalAscentM,
+        totalDescentM: totalDescentM,
+        minElevationM: minElevationM,
+        maxElevationM: maxElevationM,
+        netElevationM: netElevationM,
+        maxGradientPct: maxGradientPct,
+        minGradientPct: minGradientPct,
+        pointCount: pointCount,
+        visibility: visibility,
+        originalFilename: originalFilename,
+        profile: profile,
+        smoothingWindowM: smoothingWindowM,
+        publicSuggestionStatus: publicSuggestionStatus ?? this.publicSuggestionStatus,
+        description: description,
+      );
 
   factory Ride.fromJson(Map<String, dynamic> json) {
     double? numOrNull(dynamic v) => v == null ? null : (v as num).toDouble();
@@ -76,6 +116,8 @@ class Ride {
           ? null
           : RideProfile.fromJson(json['profile'] as Map<String, dynamic>),
       smoothingWindowM: numOrNull(json['smoothing_window_m']) ?? 30.0,
+      publicSuggestionStatus: json['public_suggestion_status'] as String? ?? 'NONE',
+      description: json['description'] as String? ?? '',
     );
   }
 
@@ -99,6 +141,8 @@ class Ride {
         'original_filename': originalFilename,
         'profile': profile?.toJson(),
         'smoothing_window_m': smoothingWindowM,
+        'public_suggestion_status': publicSuggestionStatus,
+        'description': description,
       };
 }
 
