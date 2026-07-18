@@ -78,7 +78,16 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
     });
     try {
       await _location.ensureReady();
-      final pos = await Geolocator.getCurrentPosition();
+      // A time limit is essential: on a device with no GPS fix (indoors, a
+      // simulator with no location set) getCurrentPosition never returns, which
+      // is exactly the "infinite loading" this panel showed. A timeout drops us
+      // into the city fallback instead of spinning forever.
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
       final result = await _api.getRouteSuggestions(
         lat: pos.latitude,
         lng: pos.longitude,
@@ -88,26 +97,24 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
         _result = result;
         _phase = _Phase.loaded;
       });
-    } on LocationPermissionDenied catch (e) {
-      // No location — offer the city fallback rather than dead-ending.
-      if (!mounted) return;
-      setState(() {
-        _error = e.message;
-        _phase = _Phase.error;
-      });
-      _revealCityPicker();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.message;
         _phase = _Phase.error;
       });
-    } catch (_) {
+    } catch (e) {
+      // Permission denied, location services off, or a timed-out fix all
+      // dead-end the radius path — fall back to the city picker rather than
+      // leaving the panel loading.
       if (!mounted) return;
       setState(() {
-        _error = "Couldn't get route suggestions.";
+        _error = e is LocationPermissionDenied
+            ? e.message
+            : "Couldn't get your location. Pick a city instead.";
         _phase = _Phase.error;
       });
+      _revealCityPicker();
     }
   }
 

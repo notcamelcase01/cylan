@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/models/checklist.dart';
 import '../../../core/models/event.dart';
+import '../../../core/models/subscription.dart';
 
 /// Screen-scoped state for one event's detail view (created per
 /// `EventDetailScreen`, like `RidesProvider`/`StravaImportProvider` are per
@@ -29,9 +31,16 @@ class EventDetailProvider extends ChangeNotifier {
   bool loading = false;
   String? loadError;
 
+  /// The caller's own subscription to this event, when they have one — carries
+  /// the checklist they attached so the detail screen can show and tick it.
+  /// Populated on [load] (if already subscribed) and on [subscribe].
+  Subscription? mySubscription;
+
   /// True while a subscribe/unsubscribe/delete/document call is in flight, to
   /// disable the buttons that trigger them.
   bool acting = false;
+
+  Checklist? get myChecklist => mySubscription?.checklist;
 
   Future<void> load() async {
     loading = true;
@@ -39,6 +48,13 @@ class EventDetailProvider extends ChangeNotifier {
     notifyListeners();
     try {
       event = await _api.getEvent(eventId);
+      // If we're already subscribed, pull our subscription so the attached
+      // checklist shows without needing to re-subscribe.
+      if (event?.isSubscribed == true) {
+        await _loadMySubscription();
+      } else {
+        mySubscription = null;
+      }
     } on ApiException catch (e) {
       loadError = e.message;
     } catch (_) {
@@ -49,25 +65,109 @@ class EventDetailProvider extends ChangeNotifier {
     }
   }
 
+  /// Finds the caller's subscription for this event among their subscriptions.
+  /// Best-effort: a failure here shouldn't fail the whole event load, so it
+  /// swallows errors and just leaves [mySubscription] null.
+  Future<void> _loadMySubscription() async {
+    try {
+      String? pageUrl;
+      do {
+        final page = await _api.listMySubscriptions(pageUrl: pageUrl);
+        for (final sub in page.results) {
+          if (sub.event.id == eventId) {
+            mySubscription = sub;
+            return;
+          }
+        }
+        pageUrl = page.next;
+      } while (pageUrl != null);
+    } catch (_) {
+      // Leave mySubscription as-is; the checklist section just won't render.
+    }
+  }
+
   /// Subscribes with an optional checklist. Returns null on success, else a
-  /// message. On success the event is reloaded so `is_subscribed` and the
-  /// subscriber count refresh.
+  /// message. On success the event is reloaded (so `is_subscribed` and the
+  /// count refresh) and [mySubscription] is set from the response, so the
+  /// attached checklist appears immediately.
   Future<String?> subscribe({
     int? checklistId,
     String? newChecklistName,
     List<({String text, bool isMandatory})>? newChecklistItems,
-  }) {
-    return _act(() => _api.subscribeToEvent(
-          eventId,
-          checklistId: checklistId,
-          newChecklistName: newChecklistName,
-          newChecklistItems: newChecklistItems,
-        ));
+  }) async {
+    acting = true;
+    notifyListeners();
+    try {
+      mySubscription = await _api.subscribeToEvent(
+        eventId,
+        checklistId: checklistId,
+        newChecklistName: newChecklistName,
+        newChecklistItems: newChecklistItems,
+      );
+      event = await _api.getEvent(eventId);
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'Something went wrong. Please try again.';
+    } finally {
+      acting = false;
+      notifyListeners();
+    }
   }
 
-  Future<String?> unsubscribe() {
-    return _act(() => _api.unsubscribeFromEvent(eventId));
+  Future<String?> unsubscribe() async {
+    acting = true;
+    notifyListeners();
+    try {
+      await _api.unsubscribeFromEvent(eventId);
+      mySubscription = null;
+      event = await _api.getEvent(eventId);
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'Something went wrong. Please try again.';
+    } finally {
+      acting = false;
+      notifyListeners();
+    }
   }
+
+  /// Ticks a checklist item on/off. Optimistically updates the local copy so
+  /// the checkbox responds instantly, then reverts if the server rejects it.
+  /// Returns null on success, else a message.
+  Future<String?> toggleChecklistItem(int itemId, bool isDone) async {
+    final checklist = mySubscription?.checklist;
+    if (checklist == null) return null;
+    final previous = checklist;
+    // Optimistic update.
+    mySubscription = _withChecklist(checklist.withItems([
+      for (final it in checklist.items)
+        it.id == itemId ? it.copyWith(isDone: isDone) : it,
+    ]));
+    notifyListeners();
+    try {
+      await _api.updateChecklistItem(itemId, isDone: isDone);
+      return null;
+    } on ApiException catch (e) {
+      mySubscription = _withChecklist(previous);
+      notifyListeners();
+      return e.message;
+    } catch (_) {
+      mySubscription = _withChecklist(previous);
+      notifyListeners();
+      return "Couldn't update the item.";
+    }
+  }
+
+  Subscription _withChecklist(Checklist checklist) => Subscription(
+        id: mySubscription!.id,
+        event: mySubscription!.event,
+        checklist: checklist,
+        joinedAt: mySubscription!.joinedAt,
+        copiedRide: mySubscription!.copiedRide,
+      );
 
   Future<String?> uploadDocument(
     String filePath, {

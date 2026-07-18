@@ -5,7 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/event.dart';
+import '../../../core/models/checklist.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../rides/screens/ride_detail_screen.dart';
+import '../providers/checklists_cache_provider.dart';
 import '../providers/event_detail_provider.dart';
 import '../providers/events_cache_provider.dart';
 import '../widgets/checklist_picker_sheet.dart';
@@ -112,7 +115,35 @@ class _EventDetailViewState extends State<_EventDetailView> {
       return;
     }
     context.read<EventsCacheProvider>().invalidate();
-    _snack('Subscribed.');
+    // A new checklist created inline during subscribe is now in the library —
+    // refresh so it shows on the My checklists screen and the picker.
+    if (choice.newName != null) {
+      context.read<ChecklistsCacheProvider>().fetch(force: true);
+    }
+    final event = provider.event;
+    if (event != null && _isCreator(event)) {
+      // The creator "joins" their own event only to attach a checklist — no
+      // route copy happens (they already own it), so keep the message about
+      // the checklist.
+      _snack('Checklist added to your event.');
+      return;
+    }
+    // Copy-on-subscribe: the server hands back a copy of the event's route now
+    // in the rider's own library. Tell them so, since it also appears on the
+    // Rides tab.
+    final copied = provider.mySubscription?.copiedRide;
+    _snack(copied == null
+        ? 'Subscribed.'
+        : 'Subscribed — "${copied.name}" was added to your rides.');
+  }
+
+  Future<void> _toggleChecklistItem(
+    EventDetailProvider provider,
+    int itemId,
+    bool isDone,
+  ) async {
+    final error = await provider.toggleChecklistItem(itemId, isDone);
+    if (error != null) _snack(error);
   }
 
   Future<void> _unsubscribe(EventDetailProvider provider) async {
@@ -208,6 +239,13 @@ class _EventDetailViewState extends State<_EventDetailView> {
       onSubscribe: () => _subscribe(provider),
       onUnsubscribe: () => _unsubscribe(provider),
       onOpenUrl: _openUrl,
+      onOpenRide: event.ride == null
+          ? null
+          : () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RideDetailScreen(rideId: event.ride!.id),
+                ),
+              ),
       onViewSubscribers: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SubscribersScreen(
@@ -219,6 +257,8 @@ class _EventDetailViewState extends State<_EventDetailView> {
       onUploadDocument: () => _uploadDocument(provider),
       onViewDocument: () => _viewDocument(provider),
       onDeleteDocument: () => _deleteDocument(provider),
+      onToggleChecklistItem: (itemId, isDone) =>
+          _toggleChecklistItem(provider, itemId, isDone),
     );
   }
 }
@@ -230,10 +270,12 @@ class _EventBody extends StatelessWidget {
   final VoidCallback onSubscribe;
   final VoidCallback onUnsubscribe;
   final Future<void> Function(String url) onOpenUrl;
+  final VoidCallback? onOpenRide;
   final VoidCallback onViewSubscribers;
   final VoidCallback onUploadDocument;
   final VoidCallback onViewDocument;
   final VoidCallback onDeleteDocument;
+  final void Function(int itemId, bool isDone) onToggleChecklistItem;
 
   const _EventBody({
     required this.event,
@@ -242,10 +284,12 @@ class _EventBody extends StatelessWidget {
     required this.onSubscribe,
     required this.onUnsubscribe,
     required this.onOpenUrl,
+    required this.onOpenRide,
     required this.onViewSubscribers,
     required this.onUploadDocument,
     required this.onViewDocument,
     required this.onDeleteDocument,
+    required this.onToggleChecklistItem,
   });
 
   @override
@@ -299,6 +343,8 @@ class _EventBody extends StatelessWidget {
                 '${event.ride!.distanceKm.toStringAsFixed(1)} km'
                 '${event.ride!.location != null && event.ride!.location!.isNotEmpty ? ' · ${event.ride!.location}' : ''}',
               ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenRide,
             ),
           ),
         ],
@@ -340,20 +386,32 @@ class _EventBody extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant)),
         ],
+        if (provider.myChecklist != null) ...[
+          const SizedBox(height: 16),
+          _SectionTitle('Your checklist'),
+          _ChecklistBlock(
+            checklist: provider.myChecklist!,
+            onToggle: onToggleChecklistItem,
+          ),
+        ],
         const SizedBox(height: 24),
-        if (isCreator)
+        if (isCreator) ...[
           OutlinedButton.icon(
             onPressed: onViewSubscribers,
             icon: const Icon(Icons.groups_outlined),
             label: const Text('View subscribers'),
-          )
-        else
-          _SubscribeControl(
-            event: event,
-            provider: provider,
-            onSubscribe: onSubscribe,
-            onUnsubscribe: onUnsubscribe,
           ),
+          const SizedBox(height: 12),
+        ],
+        // The creator can join their own event too — the only way to attach a
+        // personal checklist to it in the current model.
+        _SubscribeControl(
+          event: event,
+          provider: provider,
+          isCreator: isCreator,
+          onSubscribe: onSubscribe,
+          onUnsubscribe: onUnsubscribe,
+        ),
         const SizedBox(height: 16),
       ],
     );
@@ -366,12 +424,14 @@ class _EventBody extends StatelessWidget {
 class _SubscribeControl extends StatelessWidget {
   final Event event;
   final EventDetailProvider provider;
+  final bool isCreator;
   final VoidCallback onSubscribe;
   final VoidCallback onUnsubscribe;
 
   const _SubscribeControl({
     required this.event,
     required this.provider,
+    required this.isCreator,
     required this.onSubscribe,
     required this.onUnsubscribe,
   });
@@ -390,8 +450,10 @@ class _SubscribeControl extends StatelessWidget {
           children: [
             const Icon(Icons.info_outline, size: 20),
             const SizedBox(width: 10),
-            const Expanded(
-              child: Text('Subscriptions open once this event is published.'),
+            Expanded(
+              child: Text(isCreator
+                  ? 'Publish this event to add your own checklist.'
+                  : 'Subscriptions open once this event is published.'),
             ),
           ],
         ),
@@ -401,7 +463,7 @@ class _SubscribeControl extends StatelessWidget {
       return OutlinedButton.icon(
         onPressed: provider.acting ? null : onUnsubscribe,
         icon: const Icon(Icons.event_busy_outlined),
-        label: const Text('Leave event'),
+        label: Text(isCreator ? 'Remove my checklist' : 'Leave event'),
       );
     }
     final full = event.isFull;
@@ -413,8 +475,14 @@ class _SubscribeControl extends StatelessWidget {
               width: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.event_available_outlined),
-      label: Text(full ? 'Event is full' : 'Subscribe'),
+          : Icon(isCreator
+              ? Icons.playlist_add_check
+              : Icons.event_available_outlined),
+      label: Text(full
+          ? 'Event is full'
+          : isCreator
+              ? 'Add a checklist for yourself'
+              : 'Subscribe'),
     );
   }
 }
@@ -543,6 +611,56 @@ class _InfoRow extends StatelessWidget {
               size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(child: Text(label)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChecklistBlock extends StatelessWidget {
+  final Checklist checklist;
+  final void Function(int itemId, bool isDone) onToggle;
+  const _ChecklistBlock({required this.checklist, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final done = checklist.items.where((i) => i.isDone).length;
+    final total = checklist.items.length;
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.checklist, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(checklist.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                if (total > 0)
+                  Text('$done/$total',
+                      style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          if (total == 0)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text('This checklist has no items.'),
+            )
+          else
+            for (final item in checklist.items)
+              CheckboxListTile(
+                value: item.isDone,
+                onChanged: (v) => onToggle(item.id, v ?? false),
+                title: Text(item.text),
+                subtitle: item.isMandatory ? const Text('Mandatory') : null,
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
         ],
       ),
     );

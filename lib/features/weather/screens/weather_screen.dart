@@ -9,7 +9,19 @@ import '../providers/weather_cache_provider.dart';
 class WeatherScreen extends StatefulWidget {
   final Ride ride;
 
-  const WeatherScreen({super.key, required this.ride});
+  /// Optional seed for the start/finish window. When omitted the screen keeps
+  /// its default of "an hour from now, three hours long" — so existing callers
+  /// are unaffected. The event flow passes the event's date here so the rider
+  /// lands on the forecast for that day.
+  final DateTime? initialStart;
+  final DateTime? initialFinish;
+
+  const WeatherScreen({
+    super.key,
+    required this.ride,
+    this.initialStart,
+    this.initialFinish,
+  });
 
   @override
   State<WeatherScreen> createState() => _WeatherScreenState();
@@ -23,8 +35,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _start = DateTime(now.year, now.month, now.day, now.hour + 1);
-    _finish = _start.add(const Duration(hours: 3));
+    _start = widget.initialStart ??
+        DateTime(now.year, now.month, now.day, now.hour + 1);
+    _finish = widget.initialFinish ?? _start.add(const Duration(hours: 3));
   }
 
   Future<void> _pickDateTime({required bool isStart}) async {

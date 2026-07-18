@@ -10,11 +10,19 @@ class Subscription {
   final Checklist? checklist;
   final DateTime joinedAt;
 
+  /// The ride copied into the rider's own library by copy-on-subscribe, when
+  /// the event had one attached and the rider didn't already own it — a normal
+  /// ride they now fully own. **Only present on the subscribe response**; the
+  /// `GET /api/subscriptions/` list always leaves this null, so don't rely on
+  /// it outside the moment of subscribing.
+  final EventRide? copiedRide;
+
   const Subscription({
     required this.id,
     required this.event,
     required this.checklist,
     required this.joinedAt,
+    this.copiedRide,
   });
 
   factory Subscription.fromJson(Map<String, dynamic> json) => Subscription(
@@ -24,6 +32,9 @@ class Subscription {
             ? null
             : Checklist.fromJson(json['checklist'] as Map<String, dynamic>),
         joinedAt: DateTime.parse(json['joined_at'] as String),
+        copiedRide: json['copied_ride'] == null
+            ? null
+            : EventRide.fromJson(json['copied_ride'] as Map<String, dynamic>),
       );
 }
 

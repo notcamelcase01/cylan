@@ -204,7 +204,7 @@ everything below is manual-only for now.
 - [ ] Leave status at **Draft** → a note explains subscriptions open only once published.
 - [ ] Set an entry fee and currency → the event detail shows the fee formatted with that currency; leave the fee blank/0 → it shows **Free**.
 - [ ] Set a subscriber cap → the detail shows "`n` / cap subscribed"; leave it blank → shows unlimited.
-- [ ] Add a couple of external links (one per line) and remarks → both show on the detail screen; tapping a link opens it in the browser.
+- [ ] Under **More**, tap **Add an external link** → a link row appears; add a second with **Add another link**; fill both → both show on the detail screen and each opens in the browser when tapped. Tap a row's **×** → that link is removed. Add remarks → they show on the detail too.
 - [ ] Type your own assembly point → it's saved and shown; leave it blank with a ride attached → the ride's start is shown instead (server-resolved).
 
 ### Attach a route — **manual only** (native file picker / OAuth / GPS)
@@ -218,10 +218,32 @@ everything below is manual-only for now.
 ### Route suggestions — **manual only** (GPS permission)
 - [ ] On the create screen, tap **Find routes near me** → grant location permission → nearby curated routes load, each showing distance from you.
 - [ ] Deny/skip location permission → the panel automatically offers **Pick a city instead**; pick one → routes for that city load (no distance-from-you figure, since that's radius-only).
+- [ ] On a device/simulator with **no GPS fix** (permission granted but no location set) → the panel must **not** spin forever: after ~12s it times out and falls back to the city picker with a "Couldn't get your location" note.
 - [ ] No curated routes near you / in that city → a clear "no routes" message shows, not a blank panel or crash.
 - [ ] Tap **Use this route** on a suggestion → it's copied into your own rides (**fork**) and attached to the event in one step; a confirmation snackbar names the ride.
 - [ ] The forked ride now also appears on the **Rides** tab as an ordinary ride of yours.
 - [ ] Tap **Use this route** on a suggestion you've already forked before → the server's "You already own this ride." error shows, not a crash.
+
+### Detail view
+- [ ] Open any event → status and visibility chips, date, assembly point, creator, fee, and subscriber count all render; missing optional sections (no description, no links, no ride) simply don't appear rather than showing blanks.
+- [ ] Open an event **with a route attached** → the route card shows a chevron; tap it → the ride's detail screen opens (map, profile, stats), and Back returns to the event.
+- [ ] Assembly point that's bare ride-derived coordinates → a **Map** link appears and opens Google Maps; a user-typed assembly point shows as plain text with no Map link.
+- [ ] Public event → the **Contact** and **Waiver document** sections appear; a private event shows neither.
+
+### Weather prompt (on date pick)
+Weather is forecast *along the route*, and only ~8 days out, so the prompt is gated.
+- [ ] On create/edit, attach a route, then pick a **start date within ~a week** → a **"Check the weather?"** dialog appears → **See weather** opens the forecast screen with the dates pre-filled to the event day; tap **Get forecast** → the route's forecast for that day loads.
+- [ ] Pick the date **first**, then attach a route → the same prompt appears after attaching (either order works).
+- [ ] Pick a date with **no route attached** → no prompt (nothing to forecast).
+- [ ] Pick a date **far in the future** (e.g. 3 weeks out) with a route attached → no prompt (outside the forecast window).
+- [ ] Tap **Not now** → no navigation, you stay on the form with the date set.
+
+### Creator's own checklist
+A creator can join their own event to keep a personal checklist (it counts toward the cap and shows in their own roster — expected).
+- [ ] Open a **published** event you created → below **View subscribers** there's an **Add a checklist for yourself** button → tap it → the checklist picker opens (new / reuse / none) → pick one → confirmation "Checklist added to your event," and the **Your checklist** section appears with tickable items.
+- [ ] The button then becomes **Remove my checklist** → tap it → your checklist detaches and the section disappears.
+- [ ] Open a **draft** event you created → instead of the button, a note reads "Publish this event to add your own checklist."
+- [ ] After you add your own checklist, open **View subscribers** → you appear in the roster and the count includes you.
 
 ### Edit / delete (creator only)
 - [ ] Open an event you created → **Edit** and **Delete** icons appear in the app bar; open one you didn't create → neither appears.
@@ -237,7 +259,16 @@ everything below is manual-only for now.
 - [ ] Pick an existing checklist from your library → subscribe → the same checklist (same items, same ticked state) is now attached here too.
 - [ ] Subscribe to an event that's already at its subscriber cap → the button reads **Event is full** and is disabled.
 - [ ] Try subscribing to the same event twice (e.g. from two devices/sessions) → the server's "already subscribed" error surfaces cleanly.
+- [ ] Once subscribed, the event detail shows a **Your checklist** section (if you attached one) with tickable items; ticking one persists (reopen to confirm) and, if it's a reused checklist, the same tick shows on **My checklists**.
 - [ ] Tap **Leave event** on an event you're subscribed to → you're unsubscribed, the button reverts to **Subscribe**, and the subscriber count drops.
+
+#### Copy-on-subscribe (route copied to your library)
+Server-side behaviour on `POST /events/{id}/subscribe/` (returns `copied_ride`).
+
+- [ ] Subscribe to a **published event that has a route attached** (one you don't already own) → the confirmation reads *"Subscribed — "`<name>`" was added to your rides."*, and that ride now appears on the **Rides** tab under your account (openable, renameable like any other).
+- [ ] Subscribe to an event with **no** attached ride → plain "Subscribed." with no copy claim.
+- [ ] Subscribe to your **own** event (you already own the ride) → plain "Subscribed.", no duplicate ride created.
+- [ ] Leave and re-subscribe to the same event → you don't accumulate duplicate copies of the route (server is idempotent); leaving keeps the copy you already have.
 
 ### Subscribers roster (creator only)
 - [ ] As the creator, tap **View subscribers** → a roster shows the count (and cap, if set) plus each subscriber's username and join date.

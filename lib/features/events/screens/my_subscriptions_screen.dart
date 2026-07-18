@@ -155,32 +155,54 @@ class _SubscriptionCard extends StatelessWidget {
     final done = checklist?.items.where((i) => i.isDone).length ?? 0;
     final total = checklist?.items.length ?? 0;
 
+    final theme = Theme.of(context);
     return Card(
-      child: ListTile(
-        leading: const Icon(Icons.event_available_outlined),
-        title: Text(event.name,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(DateFormat('EEE, d MMM yyyy · h:mm a')
-                .format(event.startDate.toLocal())),
-            if (checklist != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  total == 0
-                      ? 'Checklist: ${checklist.name}'
-                      : 'Checklist: ${checklist.name} · $done/$total done',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-          ],
-        ),
-        isThreeLine: checklist != null,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => EventDetailScreen(eventId: event.id, initial: event),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.event_available_outlined,
+                  color: theme.colorScheme.primary),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(event.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('EEE, d MMM yyyy · h:mm a')
+                          .format(event.startDate.toLocal()),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    if (checklist != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          total == 0
+                              ? 'Checklist: ${checklist.name}'
+                              : 'Checklist: ${checklist.name} · $done/$total done',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right,
+                  color: theme.colorScheme.onSurfaceVariant),
+            ],
           ),
         ),
       ),

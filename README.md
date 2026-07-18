@@ -63,7 +63,10 @@ bottom navigation, alongside **My Rides**.
 - Subscribe to a published event, optionally attaching a checklist — create a
   fresh one or reuse one from your library; a reused checklist is the same
   list everywhere it's attached, so ticking an item off shows up on every
-  event using it
+  event using it. Once subscribed, that checklist is tickable right on the
+  event
+- Subscribing to an event that has a route copies that route into your own
+  rides automatically, so you can open, follow, or tweak it like any other
 - Creator tools: edit or delete your event, see the subscriber roster
 - Public events only: attach a liability-waiver PDF, uploaded straight to
   cloud storage from the device; any viewer can open it, the creator can

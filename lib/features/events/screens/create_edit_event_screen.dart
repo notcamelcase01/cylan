@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/models/event.dart';
+import '../../../core/models/ride.dart';
+import '../../weather/screens/weather_screen.dart';
 import '../providers/events_cache_provider.dart';
 import '../widgets/add_ride_sheet.dart';
 import '../widgets/route_suggestions_panel.dart';
@@ -35,7 +37,11 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   final _feeController = TextEditingController();
   final _maxSubsController = TextEditingController();
   final _remarksController = TextEditingController();
-  final _linksController = TextEditingController();
+
+  /// One controller per external-link row. Grows/shrinks as the rider adds or
+  /// removes links, so multiple links are actually enterable (the old single
+  /// multiline field wasn't obvious).
+  final List<TextEditingController> _linkControllers = [];
 
   String _visibility = 'PRIVATE';
   String _status = 'DRAFT';
@@ -68,7 +74,9 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
       _feeController.text = _trimFee(e.entryFee);
       _maxSubsController.text = e.maxSubscribers?.toString() ?? '';
       _remarksController.text = e.remarksTos ?? '';
-      _linksController.text = (e.externalLinks ?? const []).join('\n');
+      for (final link in e.externalLinks ?? const []) {
+        _linkControllers.add(TextEditingController(text: link));
+      }
       _visibility = e.visibility;
       _status = e.status;
       _currency = e.currency;
@@ -91,7 +99,9 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
     _feeController.dispose();
     _maxSubsController.dispose();
     _remarksController.dispose();
-    _linksController.dispose();
+    for (final c in _linkControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -124,9 +134,60 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
     });
   }
 
+  /// Whether the route weather forecast can cover [start]. The server forecasts
+  /// only within roughly ±8 days; the upper bound is trimmed to 7 to leave room
+  /// for the finish window we seed (start + 3h) to stay inside the limit.
+  bool _weatherAvailableFor(DateTime start) {
+    final now = DateTime.now();
+    return start.isAfter(now.subtract(const Duration(days: 8))) &&
+        start.isBefore(now.add(const Duration(days: 7)));
+  }
+
+  /// Loads the full attached ride (the weather screen needs its route profile
+  /// for the map) and opens the forecast seeded to the event's day.
+  Future<void> _openWeatherFor(DateTime start) async {
+    final rideId = _rideId;
+    if (rideId == null) return;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final ride = await ApiClient.instance.getRide(rideId);
+      if (!mounted) return;
+      navigator.pop(); // dismiss the loading spinner
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => WeatherScreen(
+            ride: ride,
+            initialStart: start,
+            initialFinish: start.add(const Duration(hours: 3)),
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Couldn't load the route for weather.")),
+      );
+    }
+  }
+
   Future<void> _attachRide() async {
     final ride = await showAddRideSheet(context);
     if (ride == null || !mounted) return;
+    _setAttachedRide(ride);
+  }
+
+  void _setAttachedRide(Ride ride) {
     setState(() {
       _rideId = ride.id;
       _rideLabel = '${ride.name} · ${ride.distanceKm.toStringAsFixed(1)} km';
@@ -136,9 +197,8 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   Map<String, dynamic> _buildData() {
     final name = _nameController.text.trim();
     final contactEmail = _contactEmailController.text.trim();
-    final links = _linksController.text
-        .split('\n')
-        .map((l) => l.trim())
+    final links = _linkControllers
+        .map((c) => c.text.trim())
         .where((l) => l.isNotEmpty)
         .toList();
     return {
@@ -221,6 +281,19 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                 startDate: _startDate,
                 onTap: _pickStartDate,
               ),
+              if (_startDate != null &&
+                  _rideId != null &&
+                  _weatherAvailableFor(_startDate!)) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openWeatherFor(_startDate!),
+                    icon: const Icon(Icons.cloud_outlined, size: 18),
+                    label: const Text('Check weather'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               _sectionLabel('Route (optional)'),
               _RideField(
@@ -244,13 +317,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              RouteSuggestionsPanel(
-                onRouteForked: (ride) => setState(() {
-                  _rideId = ride.id;
-                  _rideLabel =
-                      '${ride.name} · ${ride.distanceKm.toStringAsFixed(1)} km';
-                }),
-              ),
+              RouteSuggestionsPanel(onRouteForked: _setAttachedRide),
               const SizedBox(height: 16),
               _sectionLabel('Details'),
               TextFormField(
@@ -340,7 +407,10 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _currency,
-                      decoration: const InputDecoration(labelText: 'Currency'),
+                      decoration: const InputDecoration(
+                        labelText: 'Currency',
+                        helperText: ' ',
+                      ),
                       items: [
                         for (final c in kEventCurrencies)
                           DropdownMenuItem(value: c, child: Text(c)),
@@ -363,16 +433,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
               ),
               const SizedBox(height: 16),
               _sectionLabel('More (optional)'),
-              TextFormField(
-                controller: _linksController,
-                decoration: const InputDecoration(
-                  labelText: 'External links',
-                  helperText: 'One URL per line',
-                  helperMaxLines: 2,
-                ),
-                maxLines: 3,
-                keyboardType: TextInputType.url,
-              ),
+              _buildLinksEditor(),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _remarksController,
@@ -403,6 +464,50 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLinksEditor() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int i = 0; i < _linkControllers.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _linkControllers[i],
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      labelText: 'Link ${i + 1}',
+                      hintText: 'https://…',
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove link',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() {
+                    _linkControllers.removeAt(i).dispose();
+                  }),
+                ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(
+                () => _linkControllers.add(TextEditingController())),
+            icon: const Icon(Icons.add_link, size: 18),
+            label: Text(_linkControllers.isEmpty
+                ? 'Add an external link'
+                : 'Add another link'),
+          ),
+        ),
+      ],
     );
   }
 

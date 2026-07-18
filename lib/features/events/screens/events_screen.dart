@@ -153,6 +153,10 @@ class _EventsScreenState extends State<EventsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        // Distinct hero tag: this tab shares the widget tree (an IndexedStack)
+        // with the Rides tab, whose FAB keeps the default tag — two FABs with
+        // the same tag in one subtree throws "multiple heroes … same tag".
+        heroTag: 'events_fab',
         onPressed: _create,
         icon: const Icon(Icons.add),
         label: const Text('New event'),
@@ -188,13 +192,13 @@ class _EventsScreenState extends State<EventsScreen> {
     final firstError = cache.firstErrorFor(_key);
 
     if (events == null) {
-      if (cache.isLoadingFirst(_key)) {
-        return const Center(child: CircularProgressIndicator());
-      }
       if (firstError != null) {
         return _ErrorRetry(message: firstError, onRetry: () => _fetch(force: true));
       }
-      return const SizedBox.shrink();
+      // Not loaded yet and no error: either the first fetch is in flight or is
+      // about to be (scheduled post-frame / after a cache invalidation). Show a
+      // spinner rather than a blank screen so this window never looks broken.
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (events.isEmpty) {
@@ -288,11 +292,10 @@ class _FilterBar extends StatelessWidget {
             ),
           ),
         ),
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Row(
             children: [
               FilterChip(
                 label: const Text('Mine'),

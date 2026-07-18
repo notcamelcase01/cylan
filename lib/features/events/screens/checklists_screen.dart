@@ -135,6 +135,9 @@ class _ChecklistsScreenState extends State<ChecklistsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My checklists')),
       floatingActionButton: FloatingActionButton.extended(
+        // Own tag so it never collides with (or "flies" from) the tab FABs
+        // still mounted underneath this pushed route.
+        heroTag: 'checklists_fab',
         onPressed: _createChecklist,
         icon: const Icon(Icons.add),
         label: const Text('New checklist'),
