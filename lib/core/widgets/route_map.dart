@@ -41,7 +41,7 @@ const Duration _weatherBubbleGap = Duration(minutes: 30);
 /// in time can sit on nearly the same spot. When two bubbles fall within this
 /// gap, the later one is shifted back along the route by this same fraction of
 /// distance so it separates instead of stacking (see [_placeWeatherBubbles]).
-const double _weatherBubbleMinDistanceFraction = 0.02;
+const double _weatherBubbleMinDistanceFraction = 0.06;
 
 const Distance _distance = Distance();
 
@@ -415,12 +415,12 @@ class _WeatherBubble extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(point.icon, style: const TextStyle(fontSize: 8)),
+          Text(point.icon, style: const TextStyle(fontSize: 20)),
           const SizedBox(width: 1),
           Text(
             temp,
             style: TextStyle(
-              fontSize: 8,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: foreground,
             ),
@@ -431,7 +431,11 @@ class _WeatherBubble extends StatelessWidget {
               angle: (point.windDirectionDeg! + 180) % 360 * math.pi / 180,
               child: Text(
                 '↑',
-                style: TextStyle(fontSize: 8, color: foreground),
+                style: TextStyle(
+                  fontSize: 20,
+                  color: foreground,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],

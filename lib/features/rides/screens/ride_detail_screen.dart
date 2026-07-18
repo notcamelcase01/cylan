@@ -18,20 +18,30 @@ import '../widgets/notable_sections_card.dart';
 class RideDetailScreen extends StatelessWidget {
   final int rideId;
 
-  const RideDetailScreen({super.key, required this.rideId});
+  /// Opens the ride as a read-only preview — used when viewing a route the
+  /// rider doesn't own (a public event's route, before subscribing). Hides the
+  /// smoothing control, whose `POST .../smoothing/` is owner-only and would 404.
+  final bool readOnly;
+
+  const RideDetailScreen({
+    super.key,
+    required this.rideId,
+    this.readOnly = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => RideDetailProvider()..load(rideId),
-      child: _RideDetailView(rideId: rideId),
+      child: _RideDetailView(rideId: rideId, readOnly: readOnly),
     );
   }
 }
 
 class _RideDetailView extends StatefulWidget {
   final int rideId;
-  const _RideDetailView({required this.rideId});
+  final bool readOnly;
+  const _RideDetailView({required this.rideId, required this.readOnly});
 
   @override
   State<_RideDetailView> createState() => _RideDetailViewState();
@@ -313,13 +323,17 @@ class _RideDetailViewState extends State<_RideDetailView> {
               onSelectionChanged: (s) => setState(() => _chartMode = s.first),
             ),
           ),
-          const SizedBox(height: 8),
-          _SmoothingControl(
-            windowM: _pendingSmoothingWindow ?? ride.smoothingWindowM,
-            busy: context.watch<RideDetailProvider>().isApplyingSmoothing,
-            onChanged: (v) => setState(() => _pendingSmoothingWindow = v),
-            onChangeEnd: _applySmoothing,
-          ),
+          // Smoothing mutates the ride server-side (owner-only), so it's hidden
+          // when previewing someone else's route.
+          if (!widget.readOnly) ...[
+            const SizedBox(height: 8),
+            _SmoothingControl(
+              windowM: _pendingSmoothingWindow ?? ride.smoothingWindowM,
+              busy: context.watch<RideDetailProvider>().isApplyingSmoothing,
+              onChanged: (v) => setState(() => _pendingSmoothingWindow = v),
+              onChangeEnd: _applySmoothing,
+            ),
+          ],
         ],
         const SizedBox(height: 20),
         Row(

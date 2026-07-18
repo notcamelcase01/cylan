@@ -89,12 +89,18 @@ class _EventsScreenState extends State<EventsScreen> {
     // The create form invalidated the cache; refetch the current view and jump
     // to the new event.
     _fetch();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            EventDetailScreen(eventId: created.id, initial: created),
-      ),
-    );
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) =>
+                EventDetailScreen(eventId: created.id, initial: created),
+          ),
+        )
+        // Same as _openEvent: anything done on the detail screen (edit,
+        // subscribe, delete) may have invalidated the cache again.
+        .then((_) {
+      if (mounted) _fetch();
+    });
   }
 
   void _openEvent(Event event) {

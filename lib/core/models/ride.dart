@@ -16,9 +16,17 @@ class Ride {
   final double maxGradientPct;
   final double minGradientPct;
   final int pointCount;
+
+  /// `PRIVATE` | `PUBLIC`. **Read-only, derived server-side**: a ride is
+  /// `PUBLIC` while at least one PUBLIC event has it attached (then anyone can
+  /// view it), `PRIVATE` otherwise. Never sent back on writes — see the API's
+  /// RideVisibility.
+  final String visibility;
   final String? originalFilename;
   final RideProfile? profile;
   final double smoothingWindowM;
+
+  bool get isPublic => visibility == 'PUBLIC';
 
   Ride({
     required this.id,
@@ -36,6 +44,7 @@ class Ride {
     required this.maxGradientPct,
     required this.minGradientPct,
     required this.pointCount,
+    this.visibility = 'PRIVATE',
     this.originalFilename,
     this.profile,
     this.smoothingWindowM = 30.0,
@@ -61,6 +70,7 @@ class Ride {
       maxGradientPct: (json['max_gradient_pct'] as num).toDouble(),
       minGradientPct: (json['min_gradient_pct'] as num).toDouble(),
       pointCount: json['point_count'] as int,
+      visibility: json['visibility'] as String? ?? 'PRIVATE',
       originalFilename: json['original_filename'] as String?,
       profile: json['profile'] == null
           ? null
@@ -85,6 +95,7 @@ class Ride {
         'max_gradient_pct': maxGradientPct,
         'min_gradient_pct': minGradientPct,
         'point_count': pointCount,
+        'visibility': visibility,
         'original_filename': originalFilename,
         'profile': profile?.toJson(),
         'smoothing_window_m': smoothingWindowM,

@@ -122,19 +122,38 @@ class _EventDetailViewState extends State<_EventDetailView> {
     }
     final event = provider.event;
     if (event != null && _isCreator(event)) {
-      // The creator "joins" their own event only to attach a checklist — no
-      // route copy happens (they already own it), so keep the message about
-      // the checklist.
+      // The creator "joins" their own event only to attach a checklist.
       _snack('Checklist added to your event.');
       return;
     }
-    // Copy-on-subscribe: the server hands back a copy of the event's route now
-    // in the rider's own library. Tell them so, since it also appears on the
-    // Rides tab.
-    final copied = provider.mySubscription?.copiedRide;
-    _snack(copied == null
-        ? 'Subscribed.'
-        : 'Subscribed — "${copied.name}" was added to your rides.');
+    // Subscribing no longer copies the route — that's now a voluntary action
+    // via the "Add route to my rides" button in the route section.
+    _snack('Subscribed.');
+  }
+
+  /// Voluntarily copies the event's attached route into the rider's own rides
+  /// (replaces the old copy-on-subscribe). Offers to open the new copy.
+  Future<void> _copyRide(EventDetailProvider provider) async {
+    final result = await provider.copyRide();
+    if (!mounted) return;
+    if (result.error != null) {
+      _snack(result.error!);
+      return;
+    }
+    final ride = result.ride!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${ride.name}" was added to your rides.'),
+        action: SnackBarAction(
+          label: 'View',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => RideDetailScreen(rideId: ride.id),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleChecklistItem(
@@ -243,9 +262,16 @@ class _EventDetailViewState extends State<_EventDetailView> {
           ? null
           : () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => RideDetailScreen(rideId: event.ride!.id),
+                  // Non-creators are viewing someone else's (now public) route
+                  // to preview it — open it read-only so the owner-only
+                  // smoothing control (which would 404) is hidden.
+                  builder: (_) => RideDetailScreen(
+                    rideId: event.ride!.id,
+                    readOnly: !_isCreator(event),
+                  ),
                 ),
               ),
+      onCopyRide: () => _copyRide(provider),
       onViewSubscribers: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SubscribersScreen(
@@ -271,6 +297,7 @@ class _EventBody extends StatelessWidget {
   final VoidCallback onUnsubscribe;
   final Future<void> Function(String url) onOpenUrl;
   final VoidCallback? onOpenRide;
+  final VoidCallback onCopyRide;
   final VoidCallback onViewSubscribers;
   final VoidCallback onUploadDocument;
   final VoidCallback onViewDocument;
@@ -285,6 +312,7 @@ class _EventBody extends StatelessWidget {
     required this.onUnsubscribe,
     required this.onOpenUrl,
     required this.onOpenRide,
+    required this.onCopyRide,
     required this.onViewSubscribers,
     required this.onUploadDocument,
     required this.onViewDocument,
@@ -347,6 +375,26 @@ class _EventBody extends StatelessWidget {
               onTap: onOpenRide,
             ),
           ),
+          // Subscribers (who don't already own the route — i.e. not the
+          // creator) can voluntarily drop a copy into their own rides. Copying
+          // is idempotent, so tapping it again is harmless.
+          if (!isCreator && event.isSubscribed == true) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: provider.copyingRide ? null : onCopyRide,
+                icon: provider.copyingRide
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_alt, size: 18),
+                label: const Text('Add route to my rides'),
+              ),
+            ),
+          ],
         ],
         if ((event.externalLinks ?? const []).isNotEmpty) ...[
           const SizedBox(height: 16),

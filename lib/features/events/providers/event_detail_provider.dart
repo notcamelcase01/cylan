@@ -4,6 +4,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/models/checklist.dart';
 import '../../../core/models/event.dart';
+import '../../../core/models/ride.dart';
 import '../../../core/models/subscription.dart';
 
 /// Screen-scoped state for one event's detail view (created per
@@ -39,6 +40,11 @@ class EventDetailProvider extends ChangeNotifier {
   /// True while a subscribe/unsubscribe/delete/document call is in flight, to
   /// disable the buttons that trigger them.
   bool acting = false;
+
+  /// True while the voluntary "copy this route to my rides" call is in flight.
+  /// Separate from [acting] so it only disables its own button (it lives in the
+  /// route section, away from the subscribe/document controls).
+  bool copyingRide = false;
 
   Checklist? get myChecklist => mySubscription?.checklist;
 
@@ -112,6 +118,26 @@ class EventDetailProvider extends ChangeNotifier {
       return 'Something went wrong. Please try again.';
     } finally {
       acting = false;
+      notifyListeners();
+    }
+  }
+
+  /// Copies the event's attached route into the rider's own library (the
+  /// voluntary action that replaced copy-on-subscribe). Returns the new [Ride]
+  /// on success, or a message on failure. Idempotent server-side — copying
+  /// twice returns the same ride, never a duplicate.
+  Future<({Ride? ride, String? error})> copyRide() async {
+    copyingRide = true;
+    notifyListeners();
+    try {
+      final ride = await _api.copyEventRide(eventId);
+      return (ride: ride, error: null);
+    } on ApiException catch (e) {
+      return (ride: null, error: e.message);
+    } catch (_) {
+      return (ride: null, error: 'Something went wrong. Please try again.');
+    } finally {
+      copyingRide = false;
       notifyListeners();
     }
   }

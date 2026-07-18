@@ -609,6 +609,19 @@ class ApiClient {
     _ensure(response, 204);
   }
 
+  /// Copies the event's attached route into the caller's own library and
+  /// returns the new [Ride] (full detail). The voluntary counterpart to the
+  /// old copy-on-subscribe (which no longer happens): any viewer of the event
+  /// may call it, and it's idempotent — an existing copy of this event's ride
+  /// is returned rather than duplicated. `400` if the event has no route, or
+  /// the caller already owns the source ride.
+  Future<Ride> copyEventRide(int eventId) async {
+    final response =
+        await _send(() => _dio.post<dynamic>('/events/$eventId/copy-ride/'));
+    _ensure(response, 201);
+    return Ride.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// The creator-only roster for an event. `403` (surfaced as an
   /// [ApiException]) if the caller isn't the creator.
   Future<EventRoster> getEventSubscribers(int eventId) async {

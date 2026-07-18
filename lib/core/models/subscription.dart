@@ -10,11 +10,11 @@ class Subscription {
   final Checklist? checklist;
   final DateTime joinedAt;
 
-  /// The ride copied into the rider's own library by copy-on-subscribe, when
-  /// the event had one attached and the rider didn't already own it — a normal
-  /// ride they now fully own. **Only present on the subscribe response**; the
-  /// `GET /api/subscriptions/` list always leaves this null, so don't rely on
-  /// it outside the moment of subscribing.
+  /// **Deprecated / always null.** Copy-on-subscribe was removed — copying a
+  /// route into your library is now a voluntary action (the "Add route to my
+  /// rides" button on the event, `POST /events/{id}/copy-ride/`). The field is
+  /// kept only because the API still returns it (always null) for backwards
+  /// compatibility; nothing should read it.
   final EventRide? copiedRide;
 
   const Subscription({
