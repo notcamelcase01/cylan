@@ -194,24 +194,22 @@ class _RideDetailViewState extends State<_RideDetailView> {
 
     final theme = Theme.of(context);
 
-    final map = profile == null
-        ? null
-        : ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              height: 240,
-              child: RouteMap(
-                profile: profile,
-                weatherPoints: weatherPoints,
-                highlightLocation: _highlightIndex == null
-                    ? null
-                    : LatLng(
-                        profile.latitude[_highlightIndex!],
-                        profile.longitude[_highlightIndex!],
-                      ),
-              ),
+    Widget buildMap(double height) => ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            height: height,
+            child: RouteMap(
+              profile: profile!,
+              weatherPoints: weatherPoints,
+              highlightLocation: _highlightIndex == null
+                  ? null
+                  : LatLng(
+                      profile.latitude[_highlightIndex!],
+                      profile.longitude[_highlightIndex!],
+                    ),
             ),
-          );
+          ),
+        );
     final chart = !hasTrack
         ? null
         : SizedBox(
@@ -254,11 +252,14 @@ class _RideDetailViewState extends State<_RideDetailView> {
                     // width rather than orientation so it also covers wide
                     // portrait screens (e.g. an iPad).
                     final wide = constraints.maxWidth >= 700;
-                    if (!wide || map == null) {
+                    if (!wide || profile == null) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (map != null) ...[map, const SizedBox(height: 16)],
+                          if (profile != null) ...[
+                            buildMap(240),
+                            const SizedBox(height: 16),
+                          ],
                           _StatsRow(ride: ride),
                         ],
                       );
@@ -266,10 +267,9 @@ class _RideDetailViewState extends State<_RideDetailView> {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(flex: 3, child: map),
+                        Expanded(flex: 4, child: buildMap(420)),
                         const SizedBox(width: 16),
                         Expanded(
-                          flex: 2,
                           child: _StatsRow(ride: ride, vertical: true),
                         ),
                       ],
