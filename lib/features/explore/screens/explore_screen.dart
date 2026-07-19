@@ -3,9 +3,39 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/ride.dart';
 import '../../../core/models/route_suggestion.dart';
+import '../../events/screens/create_edit_event_screen.dart';
 import '../../rides/screens/ride_detail_screen.dart';
 import '../providers/explore_provider.dart';
 import 'location_picker_screen.dart';
+
+/// "Create event from this ride": no copy, no network call — just hands the
+/// ride's id + a display label straight to event creation. The ride isn't the
+/// caller's own, but a curated suggestion is always both PUBLIC and approved,
+/// which is exactly what `EventWriteSerializer.validate_ride` requires to
+/// attach it directly on save (see `CreateEditEventScreen.initialRide`).
+class _CreateEventButton extends StatelessWidget {
+  final int rideId;
+  final String label;
+  const _CreateEventButton({required this.rideId, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CreateEditEventScreen(
+              initialRide: (id: rideId, label: label),
+            ),
+          ),
+        ),
+        icon: const Icon(Icons.event_outlined, size: 18),
+        label: const Text('Create event from this ride'),
+      ),
+    );
+  }
+}
 
 /// The Explore tab: staff-approved curated rides, browsable as a flat list
 /// or searched near a place the rider picks on a map. Every ride here is
@@ -34,7 +64,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<ExploreProvider>().loadFirst();
+      if (mounted) context.read<ExploreProvider>().loadFirstNearby();
     });
   }
 
@@ -68,11 +98,107 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ],
       ),
       body: provider.mode == ExploreMode.browse
-          ? _BrowseList(provider: provider, scrollController: _scrollController)
+          ? Column(
+              children: [
+                if (provider.locationFailed)
+                  _LocationFallbackBanner(provider: provider),
+                Expanded(
+                  child: _BrowseList(
+                    provider: provider,
+                    scrollController: _scrollController,
+                  ),
+                ),
+              ],
+            )
           : _NearbyList(
               provider: provider,
               onClear: () => context.read<ExploreProvider>().clearPlace(),
             ),
+    );
+  }
+}
+
+/// Shown above the browse list when [ExploreProvider.loadFirstNearby]
+/// couldn't get a location fix — explains why the list is unfiltered and
+/// offers the same city search [RouteSuggestionsPanel] falls back to.
+class _LocationFallbackBanner extends StatefulWidget {
+  final ExploreProvider provider;
+  const _LocationFallbackBanner({required this.provider});
+
+  @override
+  State<_LocationFallbackBanner> createState() =>
+      _LocationFallbackBannerState();
+}
+
+class _LocationFallbackBannerState extends State<_LocationFallbackBanner> {
+  bool _showCityPicker = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final provider = widget.provider;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.location_off_outlined,
+                  size: 18, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Couldn't get your location — showing all rides.",
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!_showCityPicker)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() => _showCityPicker = true);
+                  provider.loadCities();
+                },
+                icon: const Icon(Icons.location_city, size: 18),
+                label: const Text('Search by city instead'),
+              ),
+            )
+          else if (provider.citiesLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else if (provider.cities.isEmpty)
+            Text('No cities with curated routes yet.',
+                style: theme.textTheme.bodySmall)
+          else
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'City'),
+              items: [
+                for (final c in provider.cities)
+                  DropdownMenuItem(value: c, child: Text(c)),
+              ],
+              onChanged: (city) {
+                if (city != null) provider.searchNearCity(city);
+              },
+            ),
+        ],
+      ),
     );
   }
 }
@@ -152,7 +278,8 @@ class _NearbyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final place = provider.pickedPlace!;
+    final place = provider.pickedPlace;
+    final city = provider.pickedCity;
     return Column(
       children: [
         Padding(
@@ -161,8 +288,10 @@ class _NearbyList extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Near ${place.latitude.toStringAsFixed(4)}, '
-                  '${place.longitude.toStringAsFixed(4)}',
+                  place != null
+                      ? 'Near ${place.latitude.toStringAsFixed(4)}, '
+                          '${place.longitude.toStringAsFixed(4)}'
+                      : 'Near $city',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
@@ -322,6 +451,11 @@ class _ApprovedRideTileState extends State<_ApprovedRideTile> {
                   },
                 ),
               ],
+              const SizedBox(height: 10),
+              _CreateEventButton(
+                rideId: ride.id,
+                label: '${ride.name} · ${ride.distanceKm.toStringAsFixed(1)} km',
+              ),
             ],
           ),
         ),
@@ -355,6 +489,16 @@ class _SuggestionTile extends StatelessWidget {
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis),
+              if (suggestion.description.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  suggestion.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
               const SizedBox(height: 4),
               Wrap(
                 spacing: 10,
@@ -383,6 +527,12 @@ class _SuggestionTile extends StatelessWidget {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ],
+              const SizedBox(height: 10),
+              _CreateEventButton(
+                rideId: suggestion.id,
+                label: '${suggestion.name} · '
+                    '${suggestion.distanceKm.toStringAsFixed(1)} km',
+              ),
             ],
           ),
         ),

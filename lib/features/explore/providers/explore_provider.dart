@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/models/ride.dart';
 import '../../../core/models/route_suggestion.dart';
+import '../../tracking/services/location_service.dart';
 
 enum ExploreMode {
   /// All staff-approved curated rides, paginated, newest first.
@@ -21,9 +23,12 @@ enum ExploreMode {
 /// Screen-scoped like [LikedRidesProvider] (created once by the tab, kept
 /// alive by `HomeShell`'s `IndexedStack`).
 class ExploreProvider extends ChangeNotifier {
-  ExploreProvider({ApiClient? api}) : _api = api ?? ApiClient.instance;
+  ExploreProvider({ApiClient? api, LocationService? location})
+      : _api = api ?? ApiClient.instance,
+        _location = location ?? LocationService();
 
   final ApiClient _api;
+  final LocationService _location;
 
   ExploreMode mode = ExploreMode.browse;
 
@@ -40,9 +45,24 @@ class ExploreProvider extends ChangeNotifier {
   // --- Nearby mode: one-shot suggestions near a picked place --------------
 
   LatLng? pickedPlace;
+
+  /// The city behind the current nearby search, when it was reached via
+  /// [searchNearCity] rather than a picked map point — mutually exclusive
+  /// with [pickedPlace]. Kept so the "Near ..." header can show what's
+  /// actually driving the search.
+  String? pickedCity;
   List<RouteSuggestion> nearby = [];
   bool isLoadingNearby = false;
   String? nearbyError;
+
+  // --- Location-fallback city picker --------------------------------------
+
+  /// Set once [loadFirstNearby] can't get a location fix, so the browse list
+  /// (all rides, unfiltered by distance) can tell the rider why they're
+  /// seeing everything and offer the same city search [searchNearCity] uses.
+  bool locationFailed = false;
+  List<String> cities = [];
+  bool citiesLoading = false;
 
   /// Bumped by every fetch in either mode, so a slow response from a
   /// superseded request (a `loadMore` after a fresh `loadFirst`, or a second
@@ -50,6 +70,46 @@ class ExploreProvider extends ChangeNotifier {
   /// stale and get dropped instead of corrupting newer results — same
   /// reasoning as [RidesProvider._generation].
   int _generation = 0;
+
+  /// Attempts to load rides near the user's location (25km radius). If
+  /// location access fails, falls back to [loadFirst] (all approved rides)
+  /// and pre-fetches [cities] so the rider can search by city instead of
+  /// seeing an unfiltered list with no way out.
+  Future<void> loadFirstNearby() async {
+    try {
+      await _location.ensureReady();
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      await searchNear(LatLng(pos.latitude, pos.longitude));
+    } catch (_) {
+      locationFailed = true;
+      notifyListeners();
+      await loadFirst();
+      await loadCities();
+    }
+  }
+
+  /// Fetches the curated-route city list once and caches it; safe to call
+  /// repeatedly (e.g. both eagerly from [loadFirstNearby] and again if the
+  /// rider taps "search by city" before that finishes).
+  Future<void> loadCities() async {
+    if (cities.isNotEmpty || citiesLoading) return;
+    citiesLoading = true;
+    notifyListeners();
+    try {
+      cities = await _api.getSuggestionLocations();
+    } catch (_) {
+      // The city list is a convenience; leave it empty on failure and let
+      // the rider retry "near me" instead.
+    } finally {
+      citiesLoading = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> loadFirst() async {
     final generation = ++_generation;
@@ -118,6 +178,7 @@ class ExploreProvider extends ChangeNotifier {
     final generation = ++_generation;
     mode = ExploreMode.nearby;
     pickedPlace = place;
+    pickedCity = null;
     isLoadingNearby = true;
     nearbyError = null;
     notifyListeners();
@@ -142,15 +203,54 @@ class ExploreProvider extends ChangeNotifier {
     }
   }
 
+  /// Switches to [ExploreMode.nearby] and searches curated rides in [city] —
+  /// the fallback path when a location fix isn't available, same city-match
+  /// mode [RouteSuggestionsPanel] uses via [ApiClient.getRouteSuggestions].
+  Future<void> searchNearCity(String city) async {
+    final generation = ++_generation;
+    mode = ExploreMode.nearby;
+    pickedPlace = null;
+    pickedCity = city;
+    isLoadingNearby = true;
+    nearbyError = null;
+    notifyListeners();
+    try {
+      final result = await _api.getRouteSuggestions(city: city);
+      if (generation != _generation) return;
+      nearby = result.suggestions;
+    } on ApiException catch (e) {
+      if (generation != _generation) return;
+      nearbyError = e.message;
+    } catch (_) {
+      if (generation != _generation) return;
+      nearbyError = "Couldn't load rides in that city.";
+    } finally {
+      if (generation == _generation) {
+        isLoadingNearby = false;
+        notifyListeners();
+      }
+    }
+  }
+
   /// Drops back to [ExploreMode.browse]. Bumps the generation so a nearby
   /// search still in flight can't land afterwards and flip the mode back.
+  /// Leaves [locationFailed]/[cities] alone — the location fix genuinely
+  /// failed, so the browse list should keep offering the city search.
+  ///
+  /// [rides] is fetched lazily here rather than eagerly alongside a
+  /// successful [searchNear]/[searchNearCity]: when location succeeds
+  /// [loadFirstNearby] never touches [loadFirst], so without this the browse
+  /// list would still be empty (and show "No approved rides yet") the first
+  /// time the rider clears back to it.
   void clearPlace() {
     _generation++;
     mode = ExploreMode.browse;
     pickedPlace = null;
+    pickedCity = null;
     nearby = [];
     nearbyError = null;
     isLoadingNearby = false;
     notifyListeners();
+    if (rides.isEmpty && !isLoading) loadFirst();
   }
 }

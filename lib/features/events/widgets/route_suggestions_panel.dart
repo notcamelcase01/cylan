@@ -3,7 +3,6 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../core/models/ride.dart';
 import '../../../core/models/route_suggestion.dart';
 import '../../tracking/services/location_service.dart';
 
@@ -13,14 +12,14 @@ import '../../tracking/services/location_service.dart';
 /// city dropdown, exactly as the backend's two suggestion modes are designed
 /// (`EVENTPLAN.md` §7.4).
 ///
-/// A suggestion is a staff-curated ride the rider doesn't own, so it can't be
-/// attached to an event directly. "Use this route" **forks** it — copies it
-/// into the rider's own library (`POST /rides/{id}/fork/`) — and hands the
-/// resulting [Ride] back via [onRouteForked] so the form can attach it like any
-/// other ride.
+/// A suggestion is a staff-curated ride the rider doesn't own. Rides are never
+/// copied: a curated suggestion is always both `PUBLIC` and approved, which is
+/// exactly what the server requires to attach someone else's ride to an event
+/// directly (`EventWriteSerializer.validate_ride`) -- so "Use this route" just
+/// hands the suggestion straight to [onRouteSelected] to attach by id.
 class RouteSuggestionsPanel extends StatefulWidget {
-  final ValueChanged<Ride>? onRouteForked;
-  const RouteSuggestionsPanel({super.key, this.onRouteForked});
+  final ValueChanged<RouteSuggestion>? onRouteSelected;
+  const RouteSuggestionsPanel({super.key, this.onRouteSelected});
 
   @override
   State<RouteSuggestionsPanel> createState() => _RouteSuggestionsPanelState();
@@ -42,33 +41,11 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
   bool _citiesLoading = false;
   String? _selectedCity;
 
-  /// The suggestion currently being forked, so its card can show a spinner and
-  /// the others stay disabled while one fork is in flight.
-  int? _forkingId;
-
-  Future<void> _use(RouteSuggestion suggestion) async {
-    setState(() => _forkingId = suggestion.id);
-    try {
-      final ride = await _api.forkRide(suggestion.id);
-      if (!mounted) return;
-      widget.onRouteForked?.call(ride);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added "${ride.name}" — attached to the event.')),
-      );
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't add that route.")),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _forkingId = null);
-    }
+  void _use(RouteSuggestion suggestion) {
+    widget.onRouteSelected?.call(suggestion);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added "${suggestion.name}" — attached to the event.')),
+    );
   }
 
   Future<void> _findNearMe() async {
@@ -195,8 +172,7 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Curated routes near you. "Use this route" adds a copy to your rides '
-            'and attaches it to the event.',
+            'Curated routes near you. "Use this route" attaches it to the event.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
@@ -301,16 +277,13 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
         ),
       ];
     }
-    final forking = _forkingId != null;
     return [
       for (final s in suggestions)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: _SuggestionCard(
             suggestion: s,
-            busy: _forkingId == s.id,
-            // While one fork is in flight, don't let a second start.
-            onUse: forking ? null : () => _use(s),
+            onUse: () => _use(s),
           ),
         ),
     ];
@@ -319,11 +292,9 @@ class _RouteSuggestionsPanelState extends State<RouteSuggestionsPanel> {
 
 class _SuggestionCard extends StatelessWidget {
   final RouteSuggestion suggestion;
-  final bool busy;
   final VoidCallback? onUse;
   const _SuggestionCard({
     required this.suggestion,
-    required this.busy,
     required this.onUse,
   });
 
@@ -347,6 +318,16 @@ class _SuggestionCard extends StatelessWidget {
             s.name,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
+          if (s.description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              s.description,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
           const SizedBox(height: 6),
           Wrap(
             spacing: 12,
@@ -375,13 +356,7 @@ class _SuggestionCard extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: FilledButton.tonalIcon(
               onPressed: onUse,
-              icon: busy
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add, size: 18),
+              icon: const Icon(Icons.add, size: 18),
               label: const Text('Use this route'),
             ),
           ),

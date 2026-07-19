@@ -6,6 +6,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/models/event.dart';
 import '../../../core/models/ride.dart';
+import '../../../core/models/route_suggestion.dart';
 import '../../weather/screens/weather_screen.dart';
 import '../providers/events_cache_provider.dart';
 import '../widgets/add_ride_sheet.dart';
@@ -20,7 +21,16 @@ import '../widgets/route_suggestions_panel.dart';
 /// shared [EventsCacheProvider] so the list reflects the change.
 class CreateEditEventScreen extends StatefulWidget {
   final Event? existing;
-  const CreateEditEventScreen({super.key, this.existing});
+
+  /// Pre-attaches this ride's id when creating a **new** event (ignored when
+  /// [existing] is set — an edit's own attached ride, if any, wins). Used by
+  /// Explore's "Create event from this ride": the caller doesn't own the ride,
+  /// so `ride` is only accepted on save if it's both `PUBLIC` and a completed
+  /// curated suggestion (`EventWriteSerializer.validate_ride`) — attached
+  /// directly by id, never copied.
+  final ({int id, String label})? initialRide;
+
+  const CreateEditEventScreen({super.key, this.existing, this.initialRide});
 
   @override
   State<CreateEditEventScreen> createState() => _CreateEditEventScreenState();
@@ -86,6 +96,9 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
         _rideLabel =
             '${e.ride!.name} · ${e.ride!.distanceKm.toStringAsFixed(1)} km';
       }
+    } else if (widget.initialRide != null) {
+      _rideId = widget.initialRide!.id;
+      _rideLabel = widget.initialRide!.label;
     }
   }
 
@@ -191,6 +204,14 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
     setState(() {
       _rideId = ride.id;
       _rideLabel = '${ride.name} · ${ride.distanceKm.toStringAsFixed(1)} km';
+    });
+  }
+
+  void _setAttachedSuggestion(RouteSuggestion suggestion) {
+    setState(() {
+      _rideId = suggestion.id;
+      _rideLabel =
+          '${suggestion.name} · ${suggestion.distanceKm.toStringAsFixed(1)} km';
     });
   }
 
@@ -317,7 +338,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              RouteSuggestionsPanel(onRouteForked: _setAttachedRide),
+              RouteSuggestionsPanel(onRouteSelected: _setAttachedSuggestion),
               const SizedBox(height: 16),
               _sectionLabel('Details'),
               TextFormField(

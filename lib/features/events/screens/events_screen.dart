@@ -86,9 +86,11 @@ class _EventsScreenState extends State<EventsScreen> {
       MaterialPageRoute(builder: (_) => const CreateEditEventScreen()),
     );
     if (created == null || !mounted) return;
-    // The create form invalidated the cache; refetch the current view and jump
-    // to the new event.
-    _fetch();
+    // The create form already invalidated the cache. Don't refetch here: this
+    // list is about to be covered by the detail screen anyway (where the
+    // creator commonly subscribes right away, invalidating again), so a fetch
+    // started now would just race that one. Same pattern as _openEvent —
+    // refetch only once we're actually back and the list is visible.
     Navigator.of(context)
         .push(
           MaterialPageRoute(
@@ -96,8 +98,6 @@ class _EventsScreenState extends State<EventsScreen> {
                 EventDetailScreen(eventId: created.id, initial: created),
           ),
         )
-        // Same as _openEvent: anything done on the detail screen (edit,
-        // subscribe, delete) may have invalidated the cache again.
         .then((_) {
       if (mounted) _fetch();
     });
@@ -203,8 +203,20 @@ class _EventsScreenState extends State<EventsScreen> {
       }
       // Not loaded yet and no error: either the first fetch is in flight or is
       // about to be (scheduled post-frame / after a cache invalidation). Show a
-      // spinner rather than a blank screen so this window never looks broken.
-      return const Center(child: CircularProgressIndicator());
+      // spinner rather than a blank screen so this window never looks broken —
+      // wrapped in RefreshIndicator so a request that's stuck for any reason
+      // (backgrounded mid-request, a stale flag from an overlapping
+      // invalidation) always has a manual way out rather than spinning forever
+      // with no escape.
+      return RefreshIndicator(
+        onRefresh: () async => _fetch(force: true),
+        child: ListView(
+          children: const [
+            SizedBox(height: 160),
+            Center(child: CircularProgressIndicator()),
+          ],
+        ),
+      );
     }
 
     if (events.isEmpty) {

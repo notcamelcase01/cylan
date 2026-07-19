@@ -26,7 +26,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   static const _minZoom = 2.0;
   static const _maxZoom = 18.0;
 
+  late MapController _mapController;
   LatLng? _picked;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapController = MapController();
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
 
   void _onTap(TapPosition tapPosition, LatLng point) {
     setState(() => _picked = point);
@@ -50,12 +63,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       body: Stack(
         children: [
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
               initialCenter: _initialCenter,
               initialZoom: _initialZoom,
               minZoom: _minZoom,
               maxZoom: _maxZoom,
               onTap: _onTap,
+              interactionOptions: const InteractionOptions(
+                flags: ~InteractiveFlag.doubleTapZoom,
+              ),
             ),
             children: [
               TileLayer(

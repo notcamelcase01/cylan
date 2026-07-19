@@ -43,9 +43,9 @@ everything below is manual-only for now.
 - [ ] Deny/skip location permission → the panel automatically offers **Pick a city instead**; pick one → routes for that city load (no distance-from-you figure, since that's radius-only).
 - [ ] On a device/simulator with **no GPS fix** (permission granted but no location set) → the panel must **not** spin forever: after ~12s it times out and falls back to the city picker with a "Couldn't get your location" note.
 - [ ] No curated routes near you / in that city → a clear "no routes" message shows, not a blank panel or crash.
-- [ ] Tap **Use this route** on a suggestion → it's copied into your own rides (**fork**) and attached to the event in one step; a confirmation snackbar names the ride.
-- [ ] The forked ride now also appears on the **Rides** tab as an ordinary ride of yours.
-- [ ] Tap **Use this route** on a suggestion you've already forked before → the server's "You already own this ride." error shows, not a crash.
+- [ ] Tap **Use this route** on a suggestion → it's attached to the event directly (no copy); a confirmation snackbar names the ride.
+- [ ] The suggestion still belongs to its original creator and is not copied; you can open it via the event's route card.
+- [ ] Tap **Use this route** on the same suggestion again on a different event → it attaches without error; the route can be attached to multiple events.
 
 ### Detail view
 - [ ] Open any event → status and visibility chips, date, assembly point, creator, fee, and subscriber count all render; missing optional sections (no description, no links, no ride) simply don't appear rather than showing blanks.

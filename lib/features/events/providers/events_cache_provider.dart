@@ -139,10 +139,22 @@ class EventsCacheProvider extends ChangeNotifier {
   /// Drops every cached page so the next [fetchFirst] refetches. Called after a
   /// create/edit/delete/subscribe, since any of those can change what a list
   /// (especially the "mine" list, or a search) should contain, and there's no
-  /// cheap way to know which keys are affected. Bumps generations too so any
-  /// in-flight [fetchMore] is recognised as stale and dropped.
+  /// cheap way to know which keys are affected. Bumps generations for every
+  /// key with *any* tracked state — not just successfully cached ones — so a
+  /// [fetchFirst] that's still in flight (not yet in [_events]) is also
+  /// recognised as stale by its own completion. Without covering that case, an
+  /// in-flight request's `finally` would wrongly match the (unbumped)
+  /// generation and appear to finish normally, while the loading flag this
+  /// call is about to clear no longer reflects it — leaving a later
+  /// [fetchFirst] free to race a second request for the same key.
   void invalidate() {
-    for (final key in _events.keys.toList()) {
+    final keys = {
+      ..._events.keys,
+      ..._loadingFirst.keys,
+      ..._loadingMore.keys,
+      ..._nextUrls.keys,
+    };
+    for (final key in keys) {
       _generations[key] = _generationOf(key) + 1;
     }
     _events.clear();

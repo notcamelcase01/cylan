@@ -326,7 +326,6 @@ class EventDetailProvider extends ChangeNotifier {
         event: mySubscription!.event,
         checklist: checklist,
         joinedAt: mySubscription!.joinedAt,
-        copiedRide: mySubscription!.copiedRide,
       );
 
   Future<String?> uploadDocument(

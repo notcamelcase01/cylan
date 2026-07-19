@@ -409,17 +409,6 @@ class ApiClient {
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// Copies a curated suggestion (a ride you don't own) into your own library,
-  /// returning your new [Ride]. Only completed suggestions can be forked; the
-  /// copy is an ordinary ride you can then attach to an event, exactly like an
-  /// uploaded one. `400` if it isn't a completed suggestion or you already own
-  /// it.
-  Future<Ride> forkRide(int id) async {
-    final response = await _send(() => _dio.post<dynamic>('/rides/$id/fork/'));
-    _ensure(response, 201);
-    return Ride.fromJson(response.data as Map<String, dynamic>);
-  }
-
   Future<Ride> renameRide(int id, String name) async {
     final response = await _send(
       () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}),

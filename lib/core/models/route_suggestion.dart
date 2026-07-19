@@ -7,6 +7,7 @@
 class RouteSuggestion {
   final int id;
   final String name;
+  final String description;
   final double distanceKm;
   final String? location;
 
@@ -22,6 +23,7 @@ class RouteSuggestion {
   const RouteSuggestion({
     required this.id,
     required this.name,
+    required this.description,
     required this.distanceKm,
     required this.location,
     required this.terrainClass,
@@ -37,6 +39,7 @@ class RouteSuggestion {
     return RouteSuggestion(
       id: json['id'] as int,
       name: json['name'] as String,
+      description: json['description'] as String? ?? '',
       distanceKm: (json['distance_km'] as num).toDouble(),
       location: json['location'] as String?,
       terrainClass: json['terrain_class'] as String,
