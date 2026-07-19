@@ -44,11 +44,6 @@ class EventDetailProvider extends ChangeNotifier {
   /// disable the buttons that trigger them.
   bool acting = false;
 
-  /// True while the voluntary "copy this route to my rides" call is in flight.
-  /// Separate from [acting] so it only disables its own button (it lives in the
-  /// route section, away from the subscribe/document controls).
-  bool copyingRide = false;
-
   /// The event's comments, oldest first, as loaded so far (public events
   /// only). Grows page by page via [loadMoreComments].
   List<EventComment> comments = [];
@@ -62,6 +57,14 @@ class EventDetailProvider extends ChangeNotifier {
 
   /// True while a posted comment is in flight, to disable the send button.
   bool postingComment = false;
+
+  /// Like state for the event's attached ride, kept separately from
+  /// [event.ride] — the event payload embeds only a trimmed [EventRide] with
+  /// no like info, so this is populated from a full [Ride] fetch instead.
+  /// Null until that fetch completes (or if there's no ride to like).
+  int? rideLikesCount;
+  bool rideIsLiked = false;
+  bool likingRide = false;
 
   bool get hasMoreComments => _commentsNextUrl != null;
 
@@ -83,6 +86,11 @@ class EventDetailProvider extends ChangeNotifier {
       // Comments exist on public events only. Not awaited: they have their own
       // loading/error state, and the event detail shouldn't wait on them.
       if (event?.isPublic == true) unawaited(loadComments());
+      // Same treatment for the ride's like info: its own fetch, not awaited,
+      // only for a public event with a route attached.
+      if (event?.isPublic == true && event?.ride != null) {
+        unawaited(_loadRideLikeInfo());
+      }
     } on ApiException catch (e) {
       loadError = e.message;
     } catch (_) {
@@ -111,6 +119,43 @@ class EventDetailProvider extends ChangeNotifier {
       } while (pageUrl != null);
     } catch (_) {
       // Leave mySubscription as-is; the checklist section just won't render.
+    }
+  }
+
+  /// Fetches the attached ride's full detail just for its like info. Best-effort,
+  /// like [_loadMySubscription]: a failure here shouldn't fail the whole event
+  /// load, so [rideLikesCount] just stays null and the like button hides.
+  Future<void> _loadRideLikeInfo() async {
+    final rideId = event?.ride?.id;
+    if (rideId == null) return;
+    try {
+      final ride = await _api.getRide(rideId);
+      rideLikesCount = ride.likesCount;
+      rideIsLiked = ride.isLiked;
+      notifyListeners();
+    } catch (_) {
+      // Leave rideLikesCount null; the like button just won't render.
+    }
+  }
+
+  /// Likes/unlikes the event's attached ride. No-op if the like info never
+  /// loaded (so there's nothing to flip). Optimistic, like
+  /// `RideDetailProvider.toggleLike`: flips immediately, rolls back on failure.
+  Future<void> toggleRideLike() async {
+    final rideId = event?.ride?.id;
+    if (rideId == null || rideLikesCount == null || likingRide) return;
+    final wasLiked = rideIsLiked;
+    likingRide = true;
+    rideIsLiked = !wasLiked;
+    notifyListeners();
+    try {
+      rideLikesCount =
+          wasLiked ? await _api.unlikeRide(rideId) : await _api.likeRide(rideId);
+    } catch (_) {
+      rideIsLiked = wasLiked;
+    } finally {
+      likingRide = false;
+      notifyListeners();
     }
   }
 
@@ -227,26 +272,6 @@ class EventDetailProvider extends ChangeNotifier {
       return 'Something went wrong. Please try again.';
     } finally {
       acting = false;
-      notifyListeners();
-    }
-  }
-
-  /// Copies the event's attached route into the rider's own library (the
-  /// voluntary action that replaced copy-on-subscribe). Returns the new [Ride]
-  /// on success, or a message on failure. Idempotent server-side — copying
-  /// twice returns the same ride, never a duplicate.
-  Future<({Ride? ride, String? error})> copyRide() async {
-    copyingRide = true;
-    notifyListeners();
-    try {
-      final ride = await _api.copyEventRide(eventId);
-      return (ride: ride, error: null);
-    } on ApiException catch (e) {
-      return (ride: null, error: e.message);
-    } catch (_) {
-      return (ride: null, error: 'Something went wrong. Please try again.');
-    } finally {
-      copyingRide = false;
       notifyListeners();
     }
   }

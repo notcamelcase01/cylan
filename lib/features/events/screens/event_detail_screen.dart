@@ -9,7 +9,6 @@ import '../../../core/models/event.dart';
 import '../../../core/models/event_comment.dart';
 import '../../../core/models/checklist.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../rides/providers/rides_provider.dart';
 import '../../rides/screens/ride_detail_screen.dart';
 import '../providers/checklists_cache_provider.dart';
 import '../providers/event_detail_provider.dart';
@@ -132,37 +131,7 @@ class _EventDetailViewState extends State<_EventDetailView> {
       _snack('Checklist added to your event.');
       return;
     }
-    // Subscribing no longer copies the route — that's now a voluntary action
-    // via the "Add route to my rides" button in the route section.
     _snack('Subscribed.');
-  }
-
-  /// Voluntarily copies the event's attached route into the rider's own rides
-  /// (replaces the old copy-on-subscribe). Offers to open the new copy.
-  Future<void> _copyRide(EventDetailProvider provider) async {
-    final result = await provider.copyRide();
-    if (!mounted) return;
-    if (result.error != null) {
-      _snack(result.error!);
-      return;
-    }
-    final ride = result.ride!;
-    // The Rides tab's provider is app-level, so refresh it here — the copy now
-    // lives in the rider's library and should show there without a manual pull.
-    context.read<RidesProvider>().refresh();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('"${ride.name}" was added to your rides.'),
-        action: SnackBarAction(
-          label: 'View',
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => RideDetailScreen(rideId: ride.id),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _toggleChecklistItem(
@@ -285,7 +254,6 @@ class _EventDetailViewState extends State<_EventDetailView> {
                 ),
               ),
             ),
-      onCopyRide: () => _copyRide(provider),
       onViewSubscribers: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) =>
@@ -313,7 +281,6 @@ class _EventBody extends StatelessWidget {
   final VoidCallback onUnsubscribe;
   final Future<void> Function(String url) onOpenUrl;
   final VoidCallback? onOpenRide;
-  final VoidCallback onCopyRide;
   final VoidCallback onViewSubscribers;
   final VoidCallback onUploadDocument;
   final VoidCallback onViewDocument;
@@ -329,7 +296,6 @@ class _EventBody extends StatelessWidget {
     required this.onUnsubscribe,
     required this.onOpenUrl,
     required this.onOpenRide,
-    required this.onCopyRide,
     required this.onViewSubscribers,
     required this.onUploadDocument,
     required this.onViewDocument,
@@ -391,26 +357,32 @@ class _EventBody extends StatelessWidget {
               onTap: onOpenRide,
             ),
           ),
-          // Subscribers (who don't already own the route — i.e. not the
-          // creator) can voluntarily drop a copy into their own rides. Copying
-          // is idempotent, so tapping it again is harmless.
-          if (!isCreator && event.isSubscribed == true) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: provider.copyingRide ? null : onCopyRide,
-                icon: provider.copyingRide
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_alt, size: 18),
-                label: const Text('Add route to my rides'),
+        ],
+        // Its own section, not folded into the route card above: the like
+        // targets the *ride* (`event.ride!.id`, via the same likeRide/unlikeRide
+        // the ride detail screen uses), not the event — this is just where the
+        // app surfaces it. Only shown once `rideLikesCount` has loaded (only
+        // fetched for public events with a ride attached — see
+        // `EventDetailProvider._loadRideLikeInfo`).
+        if (event.ride != null &&
+            event.isPublic == true &&
+            provider.rideLikesCount != null) ...[
+          const SizedBox(height: 16),
+          _SectionTitle('Likes'),
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  provider.rideIsLiked ? Icons.favorite : Icons.favorite_border,
+                  color:
+                      provider.rideIsLiked ? theme.colorScheme.primary : null,
+                ),
+                onPressed:
+                    provider.likingRide ? null : () => provider.toggleRideLike(),
               ),
-            ),
-          ],
+              Text('${provider.rideLikesCount}', style: theme.textTheme.bodyMedium),
+            ],
+          ),
         ],
         if ((event.externalLinks ?? const []).isNotEmpty) ...[
           const SizedBox(height: 16),

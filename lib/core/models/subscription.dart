@@ -10,11 +10,10 @@ class Subscription {
   final Checklist? checklist;
   final DateTime joinedAt;
 
-  /// **Deprecated / always null.** Copy-on-subscribe was removed — copying a
-  /// route into your library is now a voluntary action (the "Add route to my
-  /// rides" button on the event, `POST /events/{id}/copy-ride/`). The field is
-  /// kept only because the API still returns it (always null) for backwards
-  /// compatibility; nothing should read it.
+  /// **Deprecated / always null.** Copy-on-subscribe was removed and never
+  /// replaced with an app-side equivalent. The field is kept only because the
+  /// API still returns it (always null) for backwards compatibility; nothing
+  /// should read it.
   final EventRide? copiedRide;
 
   const Subscription({

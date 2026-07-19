@@ -214,7 +214,35 @@ class _RidesListScreenState extends State<RidesListScreen> {
     }
   }
 
+  /// Blocks the swipe-to-delete for a public ride (the server 400s on it —
+  /// `{"detail": "Only private rides can be deleted."}` — a ride attached to a
+  /// public event can't be deleted, even by its owner) with an explanation
+  /// instead of letting the card slide away and snap back unexplained.
+  Future<void> _explainPublicRideCantBeDeleted(Ride ride) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Can't delete a public ride"),
+        content: Text(
+          '"${ride.name}" is attached to a public event, so it can\'t be '
+          'deleted while public. Make the event private, detach the ride '
+          'from it, or delete the event, then try again.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<bool> _confirmDelete(Ride ride) async {
+    if (ride.isPublic) {
+      await _explainPublicRideCantBeDeleted(ride);
+      return false;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -462,12 +490,35 @@ class _RidesListScreenState extends State<RidesListScreen> {
             direction: DismissDirection.endToStart,
             confirmDismiss: (_) => _confirmDelete(ride),
             onDismissed: (_) {
-              context.read<RidesProvider>().delete(ride.id);
-              // The ride is gone, so its cached forecast describes nothing —
-              // drop it (memory + the file on disk) instead of orphaning it.
-              // Any *offline* copy is deliberately left alone: it's a
-              // standalone snapshot the rider opted into, not a cache.
-              context.read<WeatherCacheProvider>().reset(ride.id);
+              final ridesProvider = context.read<RidesProvider>();
+              final weatherCache = context.read<WeatherCacheProvider>();
+              // Captured synchronously, before the async gap below, so
+              // showing the failure snackbar never touches `context` itself
+              // after an `await`.
+              final messenger = ScaffoldMessenger.of(context);
+              ridesProvider.delete(ride.id).then((success) {
+                if (!success) {
+                  // Reinserted by RidesProvider.delete on failure — tell the
+                  // rider why, since a swiped-away card that silently comes
+                  // back otherwise looks like nothing happened. Covers the
+                  // public-ride 400 slipping past `_confirmDelete` in a race
+                  // (made public by another device between load and swipe),
+                  // and any other server-side rejection.
+                  messenger.showSnackBar(SnackBar(
+                    content: Text(
+                      ridesProvider.error ?? "Couldn't delete the ride.",
+                    ),
+                  ));
+                  return;
+                }
+                // The ride is gone, so its cached forecast describes nothing —
+                // drop it (memory + the file on disk) instead of orphaning it.
+                // Any *offline* copy is deliberately left alone: it's a
+                // standalone snapshot the rider opted into, not a cache.
+                // Only on confirmed success — a failed delete leaves the ride
+                // in the list, and its forecast is still good.
+                weatherCache.reset(ride.id);
+              });
             },
             background: Container(
               decoration: BoxDecoration(

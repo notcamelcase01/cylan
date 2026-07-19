@@ -1,0 +1,348 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/models/ride.dart';
+import '../../../core/models/route_suggestion.dart';
+import '../../rides/screens/ride_detail_screen.dart';
+import '../providers/explore_provider.dart';
+import 'location_picker_screen.dart';
+
+/// The Explore tab: staff-approved curated rides, browsable as a flat list
+/// or searched near a place the rider picks on a map. Every ride here is
+/// `PUBLIC` by construction (curated/approved rides are always public), so
+/// liking works exactly as it does from the ride's own detail screen — no
+/// special-casing needed, `RideDetailScreen` already only hides the
+/// owner-only smoothing control behind `readOnly`, never the like button.
+class ExploreScreen extends StatefulWidget {
+  const ExploreScreen({super.key});
+
+  @override
+  State<ExploreScreen> createState() => _ExploreScreenState();
+}
+
+class _ExploreScreenState extends State<ExploreScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >
+          _scrollController.position.maxScrollExtent - 200) {
+        final provider = context.read<ExploreProvider>();
+        if (provider.mode == ExploreMode.browse) provider.loadMore();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ExploreProvider>().loadFirst();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPlace() async {
+    final place = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LocationPickerScreen()),
+    );
+    if (place != null && mounted) {
+      context.read<ExploreProvider>().searchNear(place);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<ExploreProvider>();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Explore'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Pick a place',
+            onPressed: _pickPlace,
+          ),
+        ],
+      ),
+      body: provider.mode == ExploreMode.browse
+          ? _BrowseList(provider: provider, scrollController: _scrollController)
+          : _NearbyList(
+              provider: provider,
+              onClear: () => context.read<ExploreProvider>().clearPlace(),
+            ),
+    );
+  }
+}
+
+class _BrowseList extends StatelessWidget {
+  final ExploreProvider provider;
+  final ScrollController scrollController;
+  const _BrowseList({required this.provider, required this.scrollController});
+
+  @override
+  Widget build(BuildContext context) {
+    if (provider.isLoading && provider.rides.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (provider.error != null && provider.rides.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(provider.error!),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: provider.loadFirst,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (provider.rides.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.explore_outlined,
+                  size: 40, color: Theme.of(context).colorScheme.primary),
+            ),
+            const SizedBox(height: 16),
+            Text('No approved rides yet',
+                style: Theme.of(context).textTheme.titleMedium),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: provider.refresh,
+      child: ListView.separated(
+        controller: scrollController,
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+        itemCount: provider.rides.length + (provider.hasMore ? 1 : 0),
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          if (index >= provider.rides.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            );
+          }
+          return _ApprovedRideTile(ride: provider.rides[index]);
+        },
+      ),
+    );
+  }
+}
+
+class _NearbyList extends StatelessWidget {
+  final ExploreProvider provider;
+  final VoidCallback onClear;
+  const _NearbyList({required this.provider, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    final place = provider.pickedPlace!;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Near ${place.latitude.toStringAsFixed(4)}, '
+                  '${place.longitude.toStringAsFixed(4)}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              TextButton(onPressed: onClear, child: const Text('Clear')),
+            ],
+          ),
+        ),
+        Expanded(child: _nearbyBody(context)),
+      ],
+    );
+  }
+
+  Widget _nearbyBody(BuildContext context) {
+    if (provider.isLoadingNearby) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (provider.nearbyError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(provider.nearbyError!),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () => provider.searchNear(provider.pickedPlace!),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (provider.nearby.isEmpty) {
+      return const Center(child: Text('No approved rides within 25 km.'));
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+      itemCount: provider.nearby.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) =>
+          _SuggestionTile(suggestion: provider.nearby[index]),
+    );
+  }
+}
+
+class _ApprovedRideTile extends StatelessWidget {
+  final Ride ride;
+  const _ApprovedRideTile({required this.ride});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RideDetailScreen(rideId: ride.id, readOnly: true),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(ride.name,
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  Icon(Icons.favorite, size: 16, color: theme.colorScheme.primary),
+                  const SizedBox(width: 4),
+                  Text('${ride.likesCount}', style: theme.textTheme.bodySmall),
+                ],
+              ),
+              const SizedBox(height: 4),
+              _MetaChip(
+                icon: Icons.straighten,
+                label: '${ride.distanceKm.toStringAsFixed(1)} km',
+              ),
+              if (ride.description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  ride.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  final RouteSuggestion suggestion;
+  const _SuggestionTile({required this.suggestion});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                RideDetailScreen(rideId: suggestion.id, readOnly: true),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(suggestion.name,
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 10,
+                runSpacing: 2,
+                children: [
+                  _MetaChip(
+                    icon: Icons.straighten,
+                    label: '${suggestion.distanceKm.toStringAsFixed(1)} km',
+                  ),
+                  _MetaChip(icon: Icons.terrain, label: suggestion.terrainLabel),
+                  if (suggestion.distanceFromUserKm != null)
+                    _MetaChip(
+                      icon: Icons.near_me_outlined,
+                      label:
+                          '${suggestion.distanceFromUserKm!.toStringAsFixed(1)} km away',
+                    ),
+                ],
+              ),
+              if (suggestion.elevationRemarks.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  suggestion.elevationRemarks,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _MetaChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 3),
+        Text(label,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: color)),
+      ],
+    );
+  }
+}

@@ -102,13 +102,15 @@ class _RideDetailViewState extends State<_RideDetailView> {
         context.read<WeatherCacheProvider>().pointsFor(ride.id) ?? const [];
     final sections =
         context.read<SectionsCacheProvider>().sectionsFor(ride.id) ?? const [];
-    final message = await context
-        .read<OfflineRidesProvider>()
-        .save(ride, weather, sections);
+    final message = await context.read<OfflineRidesProvider>().save(
+      ride,
+      weather,
+      sections,
+    );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message ?? 'Saved for offline use'),
-    ));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message ?? 'Saved for offline use')));
   }
 
   Future<void> _removeOffline(Ride ride) async {
@@ -124,7 +126,8 @@ class _RideDetailViewState extends State<_RideDetailView> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Remove'),
           ),
@@ -145,12 +148,15 @@ class _RideDetailViewState extends State<_RideDetailView> {
   Future<void> _shareImage(Ride ride) async {
     setState(() => _sharing = true);
     try {
-      await ShareImageService()
-          .shareRepaintBoundary(_shareKey, fileName: ride.name);
+      await ShareImageService().shareRepaintBoundary(
+        _shareKey,
+        fileName: ride.name,
+      );
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not create the image')));
+          const SnackBar(content: Text('Could not create the image')),
+        );
       }
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -166,33 +172,45 @@ class _RideDetailViewState extends State<_RideDetailView> {
       appBar: AppBar(
         title: Text(ride?.name ?? 'Ride'),
         actions: [
-          if (ride != null) _OfflineAction(ride: ride, onSave: _saveOffline, onRemove: _removeOffline),
+          if (ride != null)
+            _OfflineAction(
+              ride: ride,
+              onSave: _saveOffline,
+              onRemove: _removeOffline,
+            ),
           if (ride != null)
             IconButton(
               icon: _sharing
                   ? const SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.ios_share),
               tooltip: 'Share image',
               onPressed: _sharing ? null : () => _shareImage(ride),
             ),
         ],
       ),
-      body: Builder(builder: (context) {
-        if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (provider.error != null || ride == null) {
-          return Center(child: Text(provider.error ?? 'Ride not found'));
-        }
-        return _buildContent(context, ride);
-      }),
+      body: Builder(
+        builder: (context) {
+          if (provider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (provider.error != null || ride == null) {
+            return Center(child: Text(provider.error ?? 'Ride not found'));
+          }
+          return _buildContent(context, ride, provider);
+        },
+      ),
     );
   }
 
-  Widget _buildContent(BuildContext context, Ride ride) {
+  Widget _buildContent(
+    BuildContext context,
+    Ride ride,
+    RideDetailProvider provider,
+  ) {
     final profile = ride.profile;
     final hasTrack = profile != null && profile.latitude.isNotEmpty;
     // Weather is cached app-wide once fetched on the weather screen, so it
@@ -205,21 +223,21 @@ class _RideDetailViewState extends State<_RideDetailView> {
     final theme = Theme.of(context);
 
     Widget buildMap(double height) => ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: SizedBox(
-            height: height,
-            child: RouteMap(
-              profile: profile!,
-              weatherPoints: weatherPoints,
-              highlightLocation: _highlightIndex == null
-                  ? null
-                  : LatLng(
-                      profile.latitude[_highlightIndex!],
-                      profile.longitude[_highlightIndex!],
-                    ),
-            ),
-          ),
-        );
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: height,
+        child: RouteMap(
+          profile: profile!,
+          weatherPoints: weatherPoints,
+          highlightLocation: _highlightIndex == null
+              ? null
+              : LatLng(
+                  profile.latitude[_highlightIndex!],
+                  profile.longitude[_highlightIndex!],
+                ),
+        ),
+      ),
+    );
     final chart = !hasTrack
         ? null
         : SizedBox(
@@ -243,59 +261,65 @@ class _RideDetailViewState extends State<_RideDetailView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(ride.name,
-                      style:
-                          theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  Text(
+                    ride.name,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   if (ride.recordedAt != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(DateFormat.yMMMd().format(ride.recordedAt!),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
+                      child: Text(
+                        DateFormat.yMMMd().format(ride.recordedAt!),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   const SizedBox(height: 14),
-                  LayoutBuilder(builder: (context, constraints) {
-                    // Wide layouts (tablets, unfolded foldables, phones in
-                    // landscape) put the map and stats side by side instead
-                    // of stacking, so the map isn't squeezed narrow while
-                    // space next to it goes unused. Keyed on available
-                    // width rather than orientation so it also covers wide
-                    // portrait screens (e.g. an iPad).
-                    final wide = constraints.maxWidth >= 700;
-                    if (!wide || profile == null) {
-                      return Column(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Wide layouts (tablets, unfolded foldables, phones in
+                      // landscape) put the map and stats side by side instead
+                      // of stacking, so the map isn't squeezed narrow while
+                      // space next to it goes unused. Keyed on available
+                      // width rather than orientation so it also covers wide
+                      // portrait screens (e.g. an iPad).
+                      final wide = constraints.maxWidth >= 700;
+                      if (!wide || profile == null) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (profile != null) ...[
+                              buildMap(240),
+                              const SizedBox(height: 16),
+                            ],
+                            _StatsRow(ride: ride),
+                          ],
+                        );
+                      }
+                      return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (profile != null) ...[
-                            buildMap(240),
-                            const SizedBox(height: 16),
-                          ],
-                          _StatsRow(ride: ride),
+                          Expanded(flex: 4, child: buildMap(420)),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _StatsRow(ride: ride, vertical: true),
+                          ),
                         ],
                       );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 4, child: buildMap(420)),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _StatsRow(ride: ride, vertical: true),
-                        ),
-                      ],
-                    );
-                  }),
-                  if (chart != null) ...[
-                    const SizedBox(height: 16),
-                    chart,
-                  ],
+                    },
+                  ),
+                  if (chart != null) ...[const SizedBox(height: 16), chart],
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
                       'Cylan · cyclingngin.duckdns.org',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
                     ),
                   ),
                 ],
@@ -303,6 +327,20 @@ class _RideDetailViewState extends State<_RideDetailView> {
             ),
           ),
         ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(
+                provider.isLiked ? Icons.favorite : Icons.favorite_border,
+                color: provider.isLiked ? theme.colorScheme.primary : null,
+              ),
+              onPressed: () => context.read<RideDetailProvider>().toggleLike(),
+            ),
+            Text('${ride.likesCount}', style: theme.textTheme.bodyMedium),
+          ],
+        ),
+
         if (hasTrack) ...[
           const SizedBox(height: 14),
           Center(
@@ -414,7 +452,8 @@ class _OfflineAction extends StatelessWidget {
     final saved = offline.isSaved(ride.id);
     return IconButton(
       icon: Icon(
-          saved ? Icons.offline_pin : Icons.download_for_offline_outlined),
+        saved ? Icons.offline_pin : Icons.download_for_offline_outlined,
+      ),
       color: saved ? Theme.of(context).colorScheme.primary : null,
       tooltip: saved ? 'Saved offline' : 'Save offline',
       onPressed: () => saved ? onRemove(ride) : onSave(ride),
@@ -470,8 +509,9 @@ class _SmoothingControl extends StatelessWidget {
         Text(
           'Lower keeps short, steep rises visible; higher blends them away '
           'so only the long climbs stand out.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -492,13 +532,32 @@ class _StatsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final stats = [
-      (Icons.straighten, 'Distance', '${ride.distanceKm.toStringAsFixed(1)} km'),
-      (Icons.trending_up, 'Ascent', '${ride.totalAscentM.toStringAsFixed(0)} m'),
-      (Icons.trending_down, 'Descent', '${ride.totalDescentM.toStringAsFixed(0)} m'),
-      (Icons.terrain, 'Max grade', '${ride.maxGradientPct.toStringAsFixed(1)}%'),
+      (
+        Icons.straighten,
+        'Distance',
+        '${ride.distanceKm.toStringAsFixed(1)} km',
+      ),
+      (
+        Icons.trending_up,
+        'Ascent',
+        '${ride.totalAscentM.toStringAsFixed(0)} m',
+      ),
+      (
+        Icons.trending_down,
+        'Descent',
+        '${ride.totalDescentM.toStringAsFixed(0)} m',
+      ),
+      (
+        Icons.terrain,
+        'Max grade',
+        '${ride.maxGradientPct.toStringAsFixed(1)}%',
+      ),
     ];
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 12, horizontal: vertical ? 12 : 0),
+      padding: EdgeInsets.symmetric(
+        vertical: 12,
+        horizontal: vertical ? 12 : 0,
+      ),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(14),
@@ -517,12 +576,18 @@ class _StatsRow extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(value,
-                                style: theme.textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold)),
-                            Text(label,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant)),
+                            Text(
+                              value,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              label,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -538,12 +603,18 @@ class _StatsRow extends StatelessWidget {
                     children: [
                       Icon(icon, size: 18, color: theme.colorScheme.primary),
                       const SizedBox(height: 4),
-                      Text(value,
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold)),
-                      Text(label,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant)),
+                      Text(
+                        value,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        label,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
               ],

@@ -24,27 +24,31 @@ import 'api_exception.dart';
 /// on [uploadRide] is a plain function type rather than Dio's `ProgressCallback`.
 class ApiClient {
   ApiClient._({HttpClientAdapter? adapter}) {
-    _dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: _requestTimeout,
-      receiveTimeout: _requestTimeout,
-      // Status codes are turned into messages by [_throwForResponse], which
-      // needs the decoded error body to do it — so let every response through
-      // rather than letting Dio throw before we've read it.
-      validateStatus: (_) => true,
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: _requestTimeout,
+        receiveTimeout: _requestTimeout,
+        // Status codes are turned into messages by [_throwForResponse], which
+        // needs the decoded error body to do it — so let every response through
+        // rather than letting Dio throw before we've read it.
+        validateStatus: (_) => true,
+      ),
+    );
     if (adapter != null) _dio.httpClientAdapter = adapter;
     // Auth as an interceptor rather than at each call site: it's one rule
     // ("send the token if we have one"), and 25 endpoints shouldn't each have
     // to remember it.
     _dio.interceptors.add(
-      InterceptorsWrapper(onRequest: (options, handler) async {
-        if (options.extra[_anonymous] != true) {
-          final t = await token;
-          if (t != null) options.headers['Authorization'] = 'Token $t';
-        }
-        handler.next(options);
-      }),
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          if (options.extra[_anonymous] != true) {
+            final t = await token;
+            if (t != null) options.headers['Authorization'] = 'Token $t';
+          }
+          handler.next(options);
+        },
+      ),
     );
   }
 
@@ -143,20 +147,24 @@ class ApiClient {
       case DioExceptionType.receiveTimeout:
         // An upload is the only thing that sends a FormData body, and it gets
         // its own wording to match its much longer budget.
-        return ApiException(e.requestOptions.data is FormData
-            ? 'The upload timed out. Check your connection and try again.'
-            : 'The request timed out. Check your connection and try again.');
+        return ApiException(
+          e.requestOptions.data is FormData
+              ? 'The upload timed out. Check your connection and try again.'
+              : 'The request timed out. Check your connection and try again.',
+        );
       case DioExceptionType.connectionError:
       case DioExceptionType.badCertificate:
         return ApiException(
-            'Could not reach the server. Check your connection and try again.');
+          'Could not reach the server. Check your connection and try again.',
+        );
       case DioExceptionType.cancel:
       case DioExceptionType.badResponse:
       case DioExceptionType.transformTimeout:
       case DioExceptionType.unknown:
         if (e.error is SocketException) {
           return ApiException(
-              'Could not reach the server. Check your connection and try again.');
+            'Could not reach the server. Check your connection and try again.',
+          );
         }
         return ApiException('Something went wrong. Please try again.');
     }
@@ -174,8 +182,10 @@ class ApiClient {
     // A non-JSON body means something upstream broke (a proxy's HTML error
     // page, say) — there's no field detail to mine, so report the bare code.
     if (data is! Map) {
-      throw ApiException('Unexpected server error ($status).',
-          statusCode: status);
+      throw ApiException(
+        'Unexpected server error ($status).',
+        statusCode: status,
+      );
     }
     final decoded = data.cast<String, dynamic>();
     if (decoded.containsKey('detail')) {
@@ -198,9 +208,13 @@ class ApiClient {
   /// Whether the API is reachable right now. Any HTTP response counts — this
   /// tests the path to the server, not the health of an endpoint — so only a
   /// transport failure or [timeout] answers false.
-  Future<bool> reachable({Duration timeout = const Duration(seconds: 5)}) async {
+  Future<bool> reachable({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
     try {
-      await _dio.head<void>(baseUrl, options: _anonymousOptions).timeout(timeout);
+      await _dio
+          .head<void>(baseUrl, options: _anonymousOptions)
+          .timeout(timeout);
       return true;
     } catch (_) {
       return false;
@@ -208,11 +222,13 @@ class ApiClient {
   }
 
   Future<String> login(String username, String password) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/auth/token/',
-          data: {'username': username, 'password': password},
-          options: _anonymousOptions,
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/auth/token/',
+        data: {'username': username, 'password': password},
+        options: _anonymousOptions,
+      ),
+    );
     _ensure(response, 200);
     final t = (response.data as Map<String, dynamic>)['token'] as String;
     await _storeToken(t);
@@ -227,16 +243,18 @@ class ApiClient {
     String? name,
     String? email,
   }) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/auth/signup/',
-          data: {
-            'username': username,
-            'password': password,
-            if (name != null && name.isNotEmpty) 'name': name,
-            if (email != null && email.isNotEmpty) 'email': email,
-          },
-          options: _anonymousOptions,
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/auth/signup/',
+        data: {
+          'username': username,
+          'password': password,
+          if (name != null && name.isNotEmpty) 'name': name,
+          if (email != null && email.isNotEmpty) 'email': email,
+        },
+        options: _anonymousOptions,
+      ),
+    );
     _ensure(response, 201);
     final decoded = response.data as Map<String, dynamic>;
     await _storeToken(decoded['token'] as String);
@@ -267,10 +285,12 @@ class ApiClient {
 
   /// Updates the rider's optional profile fields (name / email).
   Future<AppUser> updateProfile({String? name, String? email}) async {
-    final response = await _send(() => _dio.patch<dynamic>(
-          '/auth/me/',
-          data: {'name': ?name, 'email': ?email},
-        ));
+    final response = await _send(
+      () => _dio.patch<dynamic>(
+        '/auth/me/',
+        data: {'name': ?name, 'email': ?email},
+      ),
+    );
     _ensure(response, 200);
     return AppUser.fromJson(response.data as Map<String, dynamic>);
   }
@@ -281,14 +301,16 @@ class ApiClient {
   /// already carries the search term, so [search] is ignored when it's given);
   /// Dio leaves an absolute path alone rather than pasting it onto [baseUrl].
   Future<RidePage> listRides({String? pageUrl, String? search}) async {
-    final response = await _send(() => pageUrl != null
-        ? _dio.get<dynamic>(pageUrl)
-        : _dio.get<dynamic>(
-            '/rides/',
-            queryParameters: {
-              if (search != null && search.isNotEmpty) 'search': search,
-            },
-          ));
+    final response = await _send(
+      () => pageUrl != null
+          ? _dio.get<dynamic>(pageUrl)
+          : _dio.get<dynamic>(
+              '/rides/',
+              queryParameters: {
+                if (search != null && search.isNotEmpty) 'search': search,
+              },
+            ),
+    );
     _ensure(response, 200);
     return RidePage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -297,6 +319,44 @@ class ApiClient {
     final response = await _send(() => _dio.get<dynamic>('/rides/$id/'));
     _ensure(response, 200);
     return Ride.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Rides the caller has liked — any owner, not just their own — paginated
+  /// the same way as [listRides]. No `search` param; the endpoint doesn't
+  /// support one. [pageUrl] is an absolute `next`/`previous` URL from a prior
+  /// page.
+  Future<RidePage> listLikedRides({String? pageUrl}) async {
+    final response = await _send(
+      () => _dio.get<dynamic>(pageUrl ?? '/rides/liked/'),
+    );
+    _ensure(response, 200);
+    return RidePage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Staff-approved curated rides, browsable by any user — paginated the same
+  /// way as [listRides]. Not scoped to the caller and no `search` param; the
+  /// endpoint doesn't support one. [pageUrl] is an absolute `next`/`previous`
+  /// URL from a prior page.
+  Future<RidePage> listApprovedRides({String? pageUrl}) async {
+    final response = await _send(
+      () => _dio.get<dynamic>(pageUrl ?? '/rides/approved/'),
+    );
+    _ensure(response, 200);
+    return RidePage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<int> likeRide(int id) async {
+    final response = await _send(() => _dio.post<dynamic>('/rides/$id/likes/'));
+    _ensure(response, 200);
+    return (response.data as Map<String, dynamic>)['likes_count'] as int;
+  }
+
+  Future<int> unlikeRide(int id) async {
+    final response = await _send(
+      () => _dio.delete<dynamic>('/rides/$id/likes/'),
+    );
+    _ensure(response, 200);
+    return (response.data as Map<String, dynamic>)['likes_count'] as int;
   }
 
   /// Uploads a route file.
@@ -314,15 +374,17 @@ class ApiClient {
       if (name != null && name.isNotEmpty) 'name': name,
       'file': await MultipartFile.fromFile(filePath),
     });
-    final response = await _send(() => _dio.post<dynamic>(
-          '/rides/',
-          data: formData,
-          options: Options(
-            sendTimeout: _uploadTimeout,
-            receiveTimeout: _uploadTimeout,
-          ),
-          onSendProgress: onProgress,
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/rides/',
+        data: formData,
+        options: Options(
+          sendTimeout: _uploadTimeout,
+          receiveTimeout: _uploadTimeout,
+        ),
+        onSendProgress: onProgress,
+      ),
+    );
     _ensure(response, 201);
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
@@ -333,17 +395,16 @@ class ApiClient {
   /// [uploadRide]: resolving the link, routing, and per-point elevation
   /// lookups can take a few seconds, hence the same longer timeout.
   Future<Ride> importFromGoogleMaps({required String url, String? name}) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/rides/google-maps/',
-          data: {
-            'url': url,
-            if (name != null && name.isNotEmpty) 'name': name,
-          },
-          options: Options(
-            sendTimeout: _uploadTimeout,
-            receiveTimeout: _uploadTimeout,
-          ),
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/rides/google-maps/',
+        data: {'url': url, if (name != null && name.isNotEmpty) 'name': name},
+        options: Options(
+          sendTimeout: _uploadTimeout,
+          receiveTimeout: _uploadTimeout,
+        ),
+      ),
+    );
     _ensure(response, 201);
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
@@ -361,7 +422,8 @@ class ApiClient {
 
   Future<Ride> renameRide(int id, String name) async {
     final response = await _send(
-        () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}));
+      () => _dio.patch<dynamic>('/rides/$id/', data: {'name': name}),
+    );
     _ensure(response, 200);
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
@@ -370,8 +432,12 @@ class ApiClient {
   /// window (50-500 m): wider flattens more GPS noise, narrower preserves
   /// more detail (and more noise).
   Future<Ride> setSmoothing(int id, int windowM) async {
-    final response = await _send(() =>
-        _dio.post<dynamic>('/rides/$id/smoothing/', data: {'window_m': windowM}));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/rides/$id/smoothing/',
+        data: {'window_m': windowM},
+      ),
+    );
     _ensure(response, 200);
     return Ride.fromJson(response.data as Map<String, dynamic>);
   }
@@ -387,10 +453,12 @@ class ApiClient {
     required DateTime finish,
   }) async {
     String iso(DateTime dt) => dt.toIso8601String().split('.').first;
-    final response = await _send(() => _dio.get<dynamic>(
-          '/rides/$id/weather/',
-          queryParameters: {'start': iso(start), 'finish': iso(finish)},
-        ));
+    final response = await _send(
+      () => _dio.get<dynamic>(
+        '/rides/$id/weather/',
+        queryParameters: {'start': iso(start), 'finish': iso(finish)},
+      ),
+    );
     _ensure(response, 200);
     return (response.data as List<dynamic>)
         .map((e) => WeatherPoint.fromJson(e as Map<String, dynamic>))
@@ -401,8 +469,9 @@ class ApiClient {
   /// server. Each is self-contained (carries its own coordinates); the app
   /// only displays them. Returns an empty list for a ride with none.
   Future<List<RideSection>> getSections(int id) async {
-    final response =
-        await _send(() => _dio.get<dynamic>('/rides/$id/sections/'));
+    final response = await _send(
+      () => _dio.get<dynamic>('/rides/$id/sections/'),
+    );
     _ensure(response, 200);
     final decoded = response.data as Map<String, dynamic>;
     return (decoded['sections'] as List<dynamic>? ?? [])
@@ -415,7 +484,9 @@ class ApiClient {
   /// Returns the browser consent URL to open. Its signed `state` carries the
   /// user id so the web callback can link Strava without a web session.
   Future<String> stravaAuthorizeUrl() async {
-    final response = await _send(() => _dio.post<dynamic>('/strava/authorize/'));
+    final response = await _send(
+      () => _dio.post<dynamic>('/strava/authorize/'),
+    );
     _ensure(response, 200);
     return (response.data as Map<String, dynamic>)['authorize_url'] as String;
   }
@@ -440,18 +511,20 @@ class ApiClient {
     List<StravaRoute> routes, {
     bool disconnect = true,
   }) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/strava/import/',
-          data: {
-            'routes': [
-              for (final r in routes) {'id': r.id, 'name': r.name},
-            ],
-            'disconnect': disconnect,
-          },
-          // A batch import can take longer than a plain request if several
-          // routes are fetched from Strava and re-parsed server-side.
-          options: Options(receiveTimeout: _uploadTimeout),
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/strava/import/',
+        data: {
+          'routes': [
+            for (final r in routes) {'id': r.id, 'name': r.name},
+          ],
+          'disconnect': disconnect,
+        },
+        // A batch import can take longer than a plain request if several
+        // routes are fetched from Strava and re-parsed server-side.
+        options: Options(receiveTimeout: _uploadTimeout),
+      ),
+    );
     _ensure(response, 200);
     final decoded = response.data as Map<String, dynamic>;
     return StravaImportResult(
@@ -465,7 +538,9 @@ class ApiClient {
   }
 
   Future<void> stravaDisconnect() async {
-    final response = await _send(() => _dio.post<dynamic>('/strava/disconnect/'));
+    final response = await _send(
+      () => _dio.post<dynamic>('/strava/disconnect/'),
+    );
     _ensure(response, 204);
   }
 
@@ -486,20 +561,23 @@ class ApiClient {
     String? state,
     String? category,
   }) async {
-    final response = await _send(() => pageUrl != null
-        ? _dio.get<dynamic>(pageUrl, options: _anonymousOptions)
-        : _dio.get<dynamic>(
-            '/audax-events/',
-            queryParameters: {
-              if (month != null) 'month': '$month',
-              if (year != null) 'year': '$year',
-              if (upcoming != null) 'upcoming': '$upcoming',
-              if (city != null && city.isNotEmpty) 'city': city,
-              if (state != null && state.isNotEmpty) 'state': state,
-              if (category != null && category.isNotEmpty) 'category': category,
-            },
-            options: _anonymousOptions,
-          ));
+    final response = await _send(
+      () => pageUrl != null
+          ? _dio.get<dynamic>(pageUrl, options: _anonymousOptions)
+          : _dio.get<dynamic>(
+              '/audax-events/',
+              queryParameters: {
+                if (month != null) 'month': '$month',
+                if (year != null) 'year': '$year',
+                if (upcoming != null) 'upcoming': '$upcoming',
+                if (city != null && city.isNotEmpty) 'city': city,
+                if (state != null && state.isNotEmpty) 'state': state,
+                if (category != null && category.isNotEmpty)
+                  'category': category,
+              },
+              options: _anonymousOptions,
+            ),
+    );
     _ensure(response, 200);
     return AudaxEventPage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -508,8 +586,12 @@ class ApiClient {
   /// data the list endpoint reads — build filter UI from this rather than
   /// hardcoding a list. Not paginated, no query params, no auth needed.
   Future<AudaxEventFilters> getAudaxEventFilters() async {
-    final response = await _send(() =>
-        _dio.get<dynamic>('/audax-events/filters/', options: _anonymousOptions));
+    final response = await _send(
+      () => _dio.get<dynamic>(
+        '/audax-events/filters/',
+        options: _anonymousOptions,
+      ),
+    );
     _ensure(response, 200);
     return AudaxEventFilters.fromJson(response.data as Map<String, dynamic>);
   }
@@ -529,20 +611,23 @@ class ApiClient {
     String? location,
     bool? upcoming,
   }) async {
-    final response = await _send(() => pageUrl != null
-        ? _dio.get<dynamic>(pageUrl)
-        : _dio.get<dynamic>(
-            '/events/',
-            queryParameters: {
-              if (mine == true) 'mine': 'true',
-              if (status != null && status.isNotEmpty) 'status': status,
-              if (visibility != null && visibility.isNotEmpty)
-                'visibility': visibility,
-              if (q != null && q.isNotEmpty) 'q': q,
-              if (location != null && location.isNotEmpty) 'location': location,
-              if (upcoming == true) 'upcoming': 'true',
-            },
-          ));
+    final response = await _send(
+      () => pageUrl != null
+          ? _dio.get<dynamic>(pageUrl)
+          : _dio.get<dynamic>(
+              '/events/',
+              queryParameters: {
+                if (mine == true) 'mine': 'true',
+                if (status != null && status.isNotEmpty) 'status': status,
+                if (visibility != null && visibility.isNotEmpty)
+                  'visibility': visibility,
+                if (q != null && q.isNotEmpty) 'q': q,
+                if (location != null && location.isNotEmpty)
+                  'location': location,
+                if (upcoming == true) 'upcoming': 'true',
+              },
+            ),
+    );
     _ensure(response, 200);
     return EventPage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -559,8 +644,9 @@ class ApiClient {
   /// `max_subscribers: null` = unlimited — that the form fills in directly.
   /// Returns the full [Event] detail (`201`).
   Future<Event> createEvent(Map<String, dynamic> data) async {
-    final response =
-        await _send(() => _dio.post<dynamic>('/events/', data: data));
+    final response = await _send(
+      () => _dio.post<dynamic>('/events/', data: data),
+    );
     _ensure(response, 201);
     return Event.fromJson(response.data as Map<String, dynamic>);
   }
@@ -570,8 +656,9 @@ class ApiClient {
   /// including an explicit `null` to clear the attached ride or the subscriber
   /// cap. Returns the updated [Event] detail.
   Future<Event> updateEvent(int id, Map<String, dynamic> data) async {
-    final response =
-        await _send(() => _dio.patch<dynamic>('/events/$id/', data: data));
+    final response = await _send(
+      () => _dio.patch<dynamic>('/events/$id/', data: data),
+    );
     _ensure(response, 200);
     return Event.fromJson(response.data as Map<String, dynamic>);
   }
@@ -609,35 +696,25 @@ class ApiClient {
       body = const {};
     }
     final response = await _send(
-        () => _dio.post<dynamic>('/events/$eventId/subscribe/', data: body));
+      () => _dio.post<dynamic>('/events/$eventId/subscribe/', data: body),
+    );
     _ensure(response, 201);
     return Subscription.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> unsubscribeFromEvent(int eventId) async {
     final response = await _send(
-        () => _dio.delete<dynamic>('/events/$eventId/subscribe/'));
+      () => _dio.delete<dynamic>('/events/$eventId/subscribe/'),
+    );
     _ensure(response, 204);
-  }
-
-  /// Copies the event's attached route into the caller's own library and
-  /// returns the new [Ride] (full detail). The voluntary counterpart to the
-  /// old copy-on-subscribe (which no longer happens): any viewer of the event
-  /// may call it, and it's idempotent — an existing copy of this event's ride
-  /// is returned rather than duplicated. `400` if the event has no route, or
-  /// the caller already owns the source ride.
-  Future<Ride> copyEventRide(int eventId) async {
-    final response =
-        await _send(() => _dio.post<dynamic>('/events/$eventId/copy-ride/'));
-    _ensure(response, 201);
-    return Ride.fromJson(response.data as Map<String, dynamic>);
   }
 
   /// The creator-only roster for an event. `403` (surfaced as an
   /// [ApiException]) if the caller isn't the creator.
   Future<EventRoster> getEventSubscribers(int eventId) async {
-    final response =
-        await _send(() => _dio.get<dynamic>('/events/$eventId/subscribers/'));
+    final response = await _send(
+      () => _dio.get<dynamic>('/events/$eventId/subscribers/'),
+    );
     _ensure(response, 200);
     return EventRoster.fromJson(response.data as Map<String, dynamic>);
   }
@@ -650,9 +727,11 @@ class ApiClient {
     int eventId, {
     String? pageUrl,
   }) async {
-    final response = await _send(() => pageUrl != null
-        ? _dio.get<dynamic>(pageUrl)
-        : _dio.get<dynamic>('/events/$eventId/comments/'));
+    final response = await _send(
+      () => pageUrl != null
+          ? _dio.get<dynamic>(pageUrl)
+          : _dio.get<dynamic>('/events/$eventId/comments/'),
+    );
     _ensure(response, 200);
     return EventCommentPage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -661,8 +740,12 @@ class ApiClient {
   /// the event may comment, subscribed or not; `400` unless the event is
   /// public.
   Future<EventComment> addEventComment(int eventId, String text) async {
-    final response = await _send(() => _dio
-        .post<dynamic>('/events/$eventId/comments/', data: {'text': text}));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/events/$eventId/comments/',
+        data: {'text': text},
+      ),
+    );
     _ensure(response, 201);
     return EventComment.fromJson(response.data as Map<String, dynamic>);
   }
@@ -670,8 +753,9 @@ class ApiClient {
   /// Deletes the caller's own comment. `403` (surfaced as an [ApiException])
   /// if it isn't theirs.
   Future<void> deleteEventComment(int commentId) async {
-    final response =
-        await _send(() => _dio.delete<dynamic>('/comments/$commentId/'));
+    final response = await _send(
+      () => _dio.delete<dynamic>('/comments/$commentId/'),
+    );
     _ensure(response, 204);
   }
 
@@ -682,7 +766,8 @@ class ApiClient {
   /// Creator + public events only.
   Future<EventDocumentPresign> presignEventDocument(int eventId) async {
     final response = await _send(
-        () => _dio.post<dynamic>('/events/$eventId/document/presign/'));
+      () => _dio.post<dynamic>('/events/$eventId/document/presign/'),
+    );
     _ensure(response, 200);
     return EventDocumentPresign.fromJson(response.data as Map<String, dynamic>);
   }
@@ -701,17 +786,21 @@ class ApiClient {
       ...presign.fields,
       'file': await MultipartFile.fromFile(filePath),
     });
-    final s3 = Dio(BaseOptions(
-      sendTimeout: _uploadTimeout,
-      receiveTimeout: _uploadTimeout,
-      validateStatus: (_) => true,
-    ));
+    final s3 = Dio(
+      BaseOptions(
+        sendTimeout: _uploadTimeout,
+        receiveTimeout: _uploadTimeout,
+        validateStatus: (_) => true,
+      ),
+    );
     try {
-      final response = await _send(() => s3.post<dynamic>(
-            presign.url,
-            data: formData,
-            onSendProgress: onProgress,
-          ));
+      final response = await _send(
+        () => s3.post<dynamic>(
+          presign.url,
+          data: formData,
+          onSendProgress: onProgress,
+        ),
+      );
       // S3 returns 204 (no redirect) when the presign's success_action_status
       // isn't overridden, which the backend leaves at its default.
       if (response.statusCode != 204 && response.statusCode != 201) {
@@ -728,8 +817,9 @@ class ApiClient {
   /// Tells the backend the S3 upload finished so it records the key on the
   /// event. Returns the updated [Event] detail.
   Future<Event> confirmEventDocument(int eventId) async {
-    final response =
-        await _send(() => _dio.post<dynamic>('/events/$eventId/document/'));
+    final response = await _send(
+      () => _dio.post<dynamic>('/events/$eventId/document/'),
+    );
     _ensure(response, 200);
     return Event.fromJson(response.data as Map<String, dynamic>);
   }
@@ -737,15 +827,17 @@ class ApiClient {
   /// A short-lived (5 min) presigned URL to read the event's waiver PDF —
   /// fetch on demand each time, don't cache it. `404` if there's none.
   Future<String> getEventDocumentUrl(int eventId) async {
-    final response =
-        await _send(() => _dio.get<dynamic>('/events/$eventId/document/'));
+    final response = await _send(
+      () => _dio.get<dynamic>('/events/$eventId/document/'),
+    );
     _ensure(response, 200);
     return (response.data as Map<String, dynamic>)['url'] as String;
   }
 
   Future<void> deleteEventDocument(int eventId) async {
-    final response =
-        await _send(() => _dio.delete<dynamic>('/events/$eventId/document/'));
+    final response = await _send(
+      () => _dio.delete<dynamic>('/events/$eventId/document/'),
+    );
     _ensure(response, 204);
   }
 
@@ -760,15 +852,17 @@ class ApiClient {
     String? city,
     int? limit,
   }) async {
-    final response = await _send(() => _dio.get<dynamic>(
-          '/events/suggestions/',
-          queryParameters: {
-            'lat': ?lat,
-            'lng': ?lng,
-            if (city != null && city.isNotEmpty) 'city': city,
-            'limit': ?limit,
-          },
-        ));
+    final response = await _send(
+      () => _dio.get<dynamic>(
+        '/events/suggestions/',
+        queryParameters: {
+          'lat': ?lat,
+          'lng': ?lng,
+          if (city != null && city.isNotEmpty) 'city': city,
+          'limit': ?limit,
+        },
+      ),
+    );
     _ensure(response, 200);
     return SuggestionsResult.fromJson(response.data as Map<String, dynamic>);
   }
@@ -776,10 +870,12 @@ class ApiClient {
   /// Distinct city labels among curated rides — the fallback dropdown options
   /// when geolocation isn't available.
   Future<List<String>> getSuggestionLocations() async {
-    final response =
-        await _send(() => _dio.get<dynamic>('/events/suggestions/locations/'));
+    final response = await _send(
+      () => _dio.get<dynamic>('/events/suggestions/locations/'),
+    );
     _ensure(response, 200);
-    return ((response.data as Map<String, dynamic>)['locations'] as List<dynamic>)
+    return ((response.data as Map<String, dynamic>)['locations']
+            as List<dynamic>)
         .map((e) => e.toString())
         .toList();
   }
@@ -788,10 +884,12 @@ class ApiClient {
   /// to staff review). Returns the ride's new `public_suggestion_status`
   /// (`202`). `409` if it's already approved.
   Future<String> suggestRidePublic(int rideId, String description) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/rides/$rideId/suggest/',
-          data: {'description': description},
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/rides/$rideId/suggest/',
+        data: {'description': description},
+      ),
+    );
     _ensure(response, 202);
     return (response.data as Map<String, dynamic>)['public_suggestion_status']
         .toString();
@@ -803,8 +901,9 @@ class ApiClient {
   /// `next`. The library is usually small; [fetchAllChecklists] wraps this to
   /// pull every page.
   Future<ChecklistPage> listChecklists({String? pageUrl}) async {
-    final response =
-        await _send(() => _dio.get<dynamic>(pageUrl ?? '/checklists/'));
+    final response = await _send(
+      () => _dio.get<dynamic>(pageUrl ?? '/checklists/'),
+    );
     _ensure(response, 200);
     return ChecklistPage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -828,17 +927,19 @@ class ApiClient {
     String name, {
     List<({String text, bool isMandatory})>? items,
   }) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/checklists/',
-          data: {
-            'name': name,
-            if (items != null)
-              'items': [
-                for (final it in items)
-                  {'text': it.text, 'is_mandatory': it.isMandatory},
-              ],
-          },
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/checklists/',
+        data: {
+          'name': name,
+          if (items != null)
+            'items': [
+              for (final it in items)
+                {'text': it.text, 'is_mandatory': it.isMandatory},
+            ],
+        },
+      ),
+    );
     _ensure(response, 201);
     return Checklist.fromJson(response.data as Map<String, dynamic>);
   }
@@ -850,27 +951,31 @@ class ApiClient {
     String? name,
     List<({String text, bool isMandatory, bool isDone})>? items,
   }) async {
-    final response = await _send(() => _dio.patch<dynamic>(
-          '/checklists/$id/',
-          data: {
-            'name': ?name,
-            if (items != null)
-              'items': [
-                for (final it in items)
-                  {
-                    'text': it.text,
-                    'is_mandatory': it.isMandatory,
-                    'is_done': it.isDone,
-                  },
-              ],
-          },
-        ));
+    final response = await _send(
+      () => _dio.patch<dynamic>(
+        '/checklists/$id/',
+        data: {
+          'name': ?name,
+          if (items != null)
+            'items': [
+              for (final it in items)
+                {
+                  'text': it.text,
+                  'is_mandatory': it.isMandatory,
+                  'is_done': it.isDone,
+                },
+            ],
+        },
+      ),
+    );
     _ensure(response, 200);
     return Checklist.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> deleteChecklist(int id) async {
-    final response = await _send(() => _dio.delete<dynamic>('/checklists/$id/'));
+    final response = await _send(
+      () => _dio.delete<dynamic>('/checklists/$id/'),
+    );
     _ensure(response, 204);
   }
 
@@ -881,14 +986,12 @@ class ApiClient {
     bool isMandatory = false,
     bool isDone = false,
   }) async {
-    final response = await _send(() => _dio.post<dynamic>(
-          '/checklists/$checklistId/items/',
-          data: {
-            'text': text,
-            'is_mandatory': isMandatory,
-            'is_done': isDone,
-          },
-        ));
+    final response = await _send(
+      () => _dio.post<dynamic>(
+        '/checklists/$checklistId/items/',
+        data: {'text': text, 'is_mandatory': isMandatory, 'is_done': isDone},
+      ),
+    );
     _ensure(response, 201);
     return ChecklistItem.fromJson(response.data as Map<String, dynamic>);
   }
@@ -902,21 +1005,20 @@ class ApiClient {
     bool? isMandatory,
     bool? isDone,
   }) async {
-    final response = await _send(() => _dio.patch<dynamic>(
-          '/checklist-items/$itemId/',
-          data: {
-            'text': ?text,
-            'is_mandatory': ?isMandatory,
-            'is_done': ?isDone,
-          },
-        ));
+    final response = await _send(
+      () => _dio.patch<dynamic>(
+        '/checklist-items/$itemId/',
+        data: {'text': ?text, 'is_mandatory': ?isMandatory, 'is_done': ?isDone},
+      ),
+    );
     _ensure(response, 200);
     return ChecklistItem.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> deleteChecklistItem(int itemId) async {
-    final response =
-        await _send(() => _dio.delete<dynamic>('/checklist-items/$itemId/'));
+    final response = await _send(
+      () => _dio.delete<dynamic>('/checklist-items/$itemId/'),
+    );
     _ensure(response, 204);
   }
 
@@ -925,8 +1027,9 @@ class ApiClient {
   /// One page of the rider's subscriptions, each with its embedded event and
   /// chosen checklist. [pageUrl] pages through a prior `next`.
   Future<SubscriptionPage> listMySubscriptions({String? pageUrl}) async {
-    final response =
-        await _send(() => _dio.get<dynamic>(pageUrl ?? '/subscriptions/'));
+    final response = await _send(
+      () => _dio.get<dynamic>(pageUrl ?? '/subscriptions/'),
+    );
     _ensure(response, 200);
     return SubscriptionPage.fromJson(response.data as Map<String, dynamic>);
   }
@@ -956,8 +1059,9 @@ class EventDocumentPresign {
   factory EventDocumentPresign.fromJson(Map<String, dynamic> json) =>
       EventDocumentPresign(
         url: json['url'] as String,
-        fields: (json['fields'] as Map<String, dynamic>)
-            .map((k, v) => MapEntry(k, v.toString())),
+        fields: (json['fields'] as Map<String, dynamic>).map(
+          (k, v) => MapEntry(k, v.toString()),
+        ),
         key: json['key'] as String,
       );
 }

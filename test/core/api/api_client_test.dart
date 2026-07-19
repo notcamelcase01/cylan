@@ -213,6 +213,7 @@ void main() {
       'max_gradient_pct': 12.0,
       'min_gradient_pct': -12.0,
       'point_count': 900,
+      'likes_count': 0,
     };
 
     test('sends the url and name, and parses the imported ride', () async {

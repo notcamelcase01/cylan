@@ -3,9 +3,9 @@
 # Cross-cutting
 
 ### Bottom navigation
-- [ ] The signed-in app opens on the **Rides** tab; a bottom bar shows **Rides** and **Events**.
-- [ ] Switch to **Events** and back to **Rides** → My Rides is exactly as it was (scroll position, sort, any in-flight upload) — the tabs don't reset each other.
-- [ ] Log out from either tab, log back in → you land on **Rides** again.
+- [ ] The signed-in app opens on the **Rides** tab; a bottom bar shows **Rides**, **Events**, **Liked**, and **Explore**.
+- [ ] Switch between tabs and back → each is exactly as it was (scroll position, sort, any in-flight upload, a picked place on Explore) — the tabs don't reset each other, except **Liked** and Explore's **browse** list, which deliberately refresh every time you switch onto them (see [rides.md](rides.md#liked-rides) / [explore.md](explore.md)).
+- [ ] Log out from any tab, log back in → you land on **Rides** again.
 
 ### My Rides app bar
 - [ ] The bar shows only the **title, Sort (⇅), and ⋮** — nothing else competes with "My Rides", and the title isn't squeezed on a small phone.

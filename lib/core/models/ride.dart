@@ -3,6 +3,10 @@ import 'ride_profile.dart';
 class Ride {
   final int id;
   final String name;
+
+  /// Staff write-up for the route — set only on curated/approved rides (see
+  /// `GET /rides/approved/`); blank for an ordinary ride.
+  final String description;
   final String sourceFormat;
   final DateTime? recordedAt;
   final DateTime createdAt;
@@ -16,6 +20,8 @@ class Ride {
   final double maxGradientPct;
   final double minGradientPct;
   final int pointCount;
+  final int likesCount;
+  final bool isLiked;
 
   /// `PRIVATE` | `PUBLIC`. **Read-only, derived server-side**: a ride is
   /// `PUBLIC` while at least one PUBLIC event has it attached (then anyone can
@@ -31,6 +37,7 @@ class Ride {
   Ride({
     required this.id,
     required this.name,
+    this.description = '',
     required this.sourceFormat,
     required this.recordedAt,
     required this.createdAt,
@@ -44,6 +51,8 @@ class Ride {
     required this.maxGradientPct,
     required this.minGradientPct,
     required this.pointCount,
+    this.likesCount = 0,
+    this.isLiked = false,
     this.visibility = 'PRIVATE',
     this.originalFilename,
     this.profile,
@@ -55,6 +64,7 @@ class Ride {
     return Ride(
       id: json['id'] as int,
       name: json['name'] as String,
+      description: json['description'] as String? ?? '',
       sourceFormat: json['source_format'] as String,
       recordedAt: json['recorded_at'] == null
           ? null
@@ -70,6 +80,8 @@ class Ride {
       maxGradientPct: (json['max_gradient_pct'] as num).toDouble(),
       minGradientPct: (json['min_gradient_pct'] as num).toDouble(),
       pointCount: json['point_count'] as int,
+      likesCount: json['likes_count'] as int? ?? 0,
+      isLiked: json['is_liked'] as bool? ?? false,
       visibility: json['visibility'] as String? ?? 'PRIVATE',
       originalFilename: json['original_filename'] as String?,
       profile: json['profile'] == null
@@ -80,26 +92,29 @@ class Ride {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'source_format': sourceFormat,
-        'recorded_at': recordedAt?.toIso8601String(),
-        'created_at': createdAt.toIso8601String(),
-        'distance_km': distanceKm,
-        'distance_m': distanceM,
-        'total_ascent_m': totalAscentM,
-        'total_descent_m': totalDescentM,
-        'min_elevation_m': minElevationM,
-        'max_elevation_m': maxElevationM,
-        'net_elevation_m': netElevationM,
-        'max_gradient_pct': maxGradientPct,
-        'min_gradient_pct': minGradientPct,
-        'point_count': pointCount,
-        'visibility': visibility,
-        'original_filename': originalFilename,
-        'profile': profile?.toJson(),
-        'smoothing_window_m': smoothingWindowM,
-      };
+    'id': id,
+    'name': name,
+    'description': description,
+    'source_format': sourceFormat,
+    'recorded_at': recordedAt?.toIso8601String(),
+    'created_at': createdAt.toIso8601String(),
+    'distance_km': distanceKm,
+    'distance_m': distanceM,
+    'total_ascent_m': totalAscentM,
+    'total_descent_m': totalDescentM,
+    'min_elevation_m': minElevationM,
+    'max_elevation_m': maxElevationM,
+    'net_elevation_m': netElevationM,
+    'max_gradient_pct': maxGradientPct,
+    'min_gradient_pct': minGradientPct,
+    'point_count': pointCount,
+    'visibility': visibility,
+    'original_filename': originalFilename,
+    'profile': profile?.toJson(),
+    'smoothing_window_m': smoothingWindowM,
+    'likes_count': likesCount,
+    'is_liked': isLiked,
+  };
 }
 
 class RidePage {
@@ -116,11 +131,11 @@ class RidePage {
   });
 
   factory RidePage.fromJson(Map<String, dynamic> json) => RidePage(
-        count: json['count'] as int,
-        next: json['next'] as String?,
-        previous: json['previous'] as String?,
-        results: (json['results'] as List<dynamic>)
-            .map((e) => Ride.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+    count: json['count'] as int,
+    next: json['next'] as String?,
+    previous: json['previous'] as String?,
+    results: (json['results'] as List<dynamic>)
+        .map((e) => Ride.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
 }

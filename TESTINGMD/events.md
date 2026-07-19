@@ -85,13 +85,14 @@ A creator can join their own event to keep a personal checklist (it counts towar
 - [ ] Once subscribed, the event detail shows a **Your checklist** section (if you attached one) with tickable items; ticking one persists (reopen to confirm) and, if it's a reused checklist, the same tick shows on **My checklists**.
 - [ ] Tap **Leave event** on an event you're subscribed to → you're unsubscribed, the button reverts to **Subscribe**, and the subscriber count drops.
 
-#### Route copy ("Add route to my rides")
-Copying the route is voluntary — subscribing alone copies nothing.
-
-- [ ] Subscribe to a **published event that has a route attached** (one you don't already own) → an **Add route to my rides** button appears under the route card → tap it → the confirmation names the ride with a **View** action that opens it, and the ride now appears on the **Rides** tab under your account (openable, renameable like any other).
-- [ ] Tap **Add route to my rides** again → no duplicate is created (server is idempotent — the same copy comes back).
-- [ ] As the event's **creator** (you already own the route) → no copy button shows.
-- [ ] Leave the event → the copy you already made stays in your rides.
+### Likes (on the attached ride)
+The like targets the *ride*, not the event — it's just surfaced here since
+that's where the route lives in the UI. Only shows on **public** events with a
+route attached.
+- [ ] Open a public event with a route attached → a **Likes** section appears below the route card, with a heart + count.
+- [ ] Tap the heart → it fills/unfills and the count updates, same behaviour as the ride's own detail screen (see [ride-detail.md](ride-detail.md#likes)).
+- [ ] Open a **private** event with a route attached → no Likes section shows.
+- [ ] Open a public event with **no** route attached → no Likes section shows.
 
 ### Comments (public events only)
 - [ ] Open a **public** event → a **Comments** section closes out the detail screen; a **private** event has no such section.

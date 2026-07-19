@@ -8,6 +8,14 @@
 - [ ] Drag the **Smoothing** slider (50–500 m) → the profile re-smooths; the value label updates; a brief spinner shows while it applies.
 - [ ] On a wide screen (tablet / landscape / unfolded foldable) → the map and stats lay out side-by-side.
 
+### Likes
+- [ ] Open a ride you haven't liked → the heart is outlined and shows the current count.
+- [ ] Tap the heart → it fills immediately (optimistic) and the count goes up by one.
+- [ ] Tap it again → it un-fills and the count drops back.
+- [ ] Leave the ride and reopen it → the like state you left it in is still correct (reflects `is_liked` from the server, not just this session).
+- [ ] Open the same ride from the **Liked Rides** tab (see [rides.md](rides.md#liked-rides)) → the like state matches what you set on the detail screen.
+- [ ] With no connection, tap the heart → it reverts to its previous state rather than getting stuck filled/unfilled incorrectly.
+
 ### Notable sections
 - [ ] Open a ride with climbs/descents → a **Notable sections** list shows at the bottom, each row with an icon, label, distance range, and average gradient.
 - [ ] Open a ride with no notable sections → the list is simply absent (no empty heading, no crash).
