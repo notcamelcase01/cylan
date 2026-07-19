@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/models/ride.dart';
-import '../../../core/models/route_suggestion.dart';
 import '../../events/screens/create_edit_event_screen.dart';
 import '../../rides/screens/ride_detail_screen.dart';
 import '../providers/explore_provider.dart';
@@ -59,8 +58,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >
           _scrollController.position.maxScrollExtent - 200) {
-        final provider = context.read<ExploreProvider>();
-        if (provider.mode == ExploreMode.browse) provider.loadMore();
+        context.read<ExploreProvider>().loadMore();
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,23 +95,52 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ),
         ],
       ),
-      body: provider.mode == ExploreMode.browse
-          ? Column(
-              children: [
-                if (provider.locationFailed)
-                  _LocationFallbackBanner(provider: provider),
-                Expanded(
-                  child: _BrowseList(
-                    provider: provider,
-                    scrollController: _scrollController,
-                  ),
-                ),
-              ],
-            )
-          : _NearbyList(
+      body: Column(
+        children: [
+          if (provider.locationFailed && !provider.isFiltered)
+            _LocationFallbackBanner(provider: provider),
+          if (provider.isFiltered) _FilterHeader(provider: provider),
+          Expanded(
+            child: _RideList(
               provider: provider,
-              onClear: () => context.read<ExploreProvider>().clearPlace(),
+              scrollController: _scrollController,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown above the list while filtered to a picked place or city — names
+/// the filter and offers a way back to the unfiltered list.
+class _FilterHeader extends StatelessWidget {
+  final ExploreProvider provider;
+  const _FilterHeader({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final place = provider.pickedPlace;
+    final city = provider.pickedCity;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              place != null
+                  ? 'Near ${place.latitude.toStringAsFixed(4)}, '
+                      '${place.longitude.toStringAsFixed(4)}'
+                  : 'Near $city',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          TextButton(
+            onPressed: () => context.read<ExploreProvider>().clearPlace(),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -203,10 +230,10 @@ class _LocationFallbackBannerState extends State<_LocationFallbackBanner> {
   }
 }
 
-class _BrowseList extends StatelessWidget {
+class _RideList extends StatelessWidget {
   final ExploreProvider provider;
   final ScrollController scrollController;
-  const _BrowseList({required this.provider, required this.scrollController});
+  const _RideList({required this.provider, required this.scrollController});
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +270,10 @@ class _BrowseList extends StatelessWidget {
                   size: 40, color: Theme.of(context).colorScheme.primary),
             ),
             const SizedBox(height: 16),
-            Text('No approved rides yet',
+            Text(
+                provider.isFiltered
+                    ? 'No approved rides here yet'
+                    : 'No approved rides yet',
                 style: Theme.of(context).textTheme.titleMedium),
           ],
         ),
@@ -267,71 +297,6 @@ class _BrowseList extends StatelessWidget {
           return _ApprovedRideTile(ride: provider.rides[index]);
         },
       ),
-    );
-  }
-}
-
-class _NearbyList extends StatelessWidget {
-  final ExploreProvider provider;
-  final VoidCallback onClear;
-  const _NearbyList({required this.provider, required this.onClear});
-
-  @override
-  Widget build(BuildContext context) {
-    final place = provider.pickedPlace;
-    final city = provider.pickedCity;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  place != null
-                      ? 'Near ${place.latitude.toStringAsFixed(4)}, '
-                          '${place.longitude.toStringAsFixed(4)}'
-                      : 'Near $city',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              TextButton(onPressed: onClear, child: const Text('Clear')),
-            ],
-          ),
-        ),
-        Expanded(child: _nearbyBody(context)),
-      ],
-    );
-  }
-
-  Widget _nearbyBody(BuildContext context) {
-    if (provider.isLoadingNearby) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (provider.nearbyError != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(provider.nearbyError!),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () => provider.searchNear(provider.pickedPlace!),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-    if (provider.nearby.isEmpty) {
-      return const Center(child: Text('No approved rides within 25 km.'));
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-      itemCount: provider.nearby.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) =>
-          _SuggestionTile(suggestion: provider.nearby[index]),
     );
   }
 }
@@ -455,83 +420,6 @@ class _ApprovedRideTileState extends State<_ApprovedRideTile> {
               _CreateEventButton(
                 rideId: ride.id,
                 label: '${ride.name} · ${ride.distanceKm.toStringAsFixed(1)} km',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SuggestionTile extends StatelessWidget {
-  final RouteSuggestion suggestion;
-  const _SuggestionTile({required this.suggestion});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) =>
-                RideDetailScreen(rideId: suggestion.id, readOnly: true),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(suggestion.name,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis),
-              if (suggestion.description.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  suggestion.description,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ],
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 10,
-                runSpacing: 2,
-                children: [
-                  _MetaChip(
-                    icon: Icons.straighten,
-                    label: '${suggestion.distanceKm.toStringAsFixed(1)} km',
-                  ),
-                  _MetaChip(icon: Icons.terrain, label: suggestion.terrainLabel),
-                  if (suggestion.distanceFromUserKm != null)
-                    _MetaChip(
-                      icon: Icons.near_me_outlined,
-                      label:
-                          '${suggestion.distanceFromUserKm!.toStringAsFixed(1)} km away',
-                    ),
-                ],
-              ),
-              if (suggestion.elevationRemarks.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  suggestion.elevationRemarks,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ],
-              const SizedBox(height: 10),
-              _CreateEventButton(
-                rideId: suggestion.id,
-                label: '${suggestion.name} · '
-                    '${suggestion.distanceKm.toStringAsFixed(1)} km',
               ),
             ],
           ),

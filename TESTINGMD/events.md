@@ -20,7 +20,8 @@ everything below is manual-only for now.
 - [ ] Open an event, go back → the list reflects any change you just made (subscribe, edit, delete) without a manual refresh.
 
 ### Create
-- [ ] Tap **New event**, leave the name blank, fill in a start date, save → the event is created as **"MyEvent"**.
+- [ ] Tap **New event**, leave the name blank, fill in a start date, save → the event is created as **"MyEvent"** and you're taken to the event detail screen; going back to the list shows it immediately, not stuck loading.
+- [ ] Create an event, then **from the detail screen** subscribe to it immediately (e.g. to attach a checklist) → go back to the Events list → it should **not** hang with an infinite spinner (if it does, pull down to refresh as an escape hatch).
 - [ ] Try to save with no start date → inline error blocks it.
 - [ ] Set visibility to **Public** and try to save with no contact number → a clear error blocks it; fill in a number → it saves.
 - [ ] Set visibility to **Private** → contact number is optional.
@@ -39,8 +40,8 @@ everything below is manual-only for now.
 - [ ] With a ride attached, tap **Change** → the sheet reopens; tap the **×** → the ride is detached and the "Attach a ride" button reappears.
 
 ### Route suggestions — **manual only** (GPS permission)
-- [ ] On the create screen, tap **Find routes near me** → grant location permission → nearby curated routes load, each showing distance from you.
-- [ ] Deny/skip location permission → the panel automatically offers **Pick a city instead**; pick one → routes for that city load (no distance-from-you figure, since that's radius-only).
+- [ ] On the create screen, tap **Find routes near me** → grant location permission → nearby curated routes load, each showing distance from you and (if staff wrote one) a description.
+- [ ] Deny/skip location permission → the panel automatically offers **Pick a city instead**; pick one → routes for that city load (with descriptions, no distance-from-you figure, since that's radius-only).
 - [ ] On a device/simulator with **no GPS fix** (permission granted but no location set) → the panel must **not** spin forever: after ~12s it times out and falls back to the city picker with a "Couldn't get your location" note.
 - [ ] No curated routes near you / in that city → a clear "no routes" message shows, not a blank panel or crash.
 - [ ] Tap **Use this route** on a suggestion → it's attached to the event directly (no copy); a confirmation snackbar names the ride.

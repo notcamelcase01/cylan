@@ -335,11 +335,29 @@ class ApiClient {
 
   /// Staff-approved curated rides, browsable by any user — paginated the same
   /// way as [listRides]. Not scoped to the caller and no `search` param; the
-  /// endpoint doesn't support one. [pageUrl] is an absolute `next`/`previous`
-  /// URL from a prior page.
-  Future<RidePage> listApprovedRides({String? pageUrl}) async {
+  /// endpoint doesn't support one. Optionally filtered by [lat]/[lng] (25 km
+  /// radius match, same as the event-creation suggestions) or [city]
+  /// (substring match); pass at most one of the two. [pageUrl] is an
+  /// absolute `next`/`previous` URL from a prior page (already carries
+  /// whatever filter was applied, so the other params are ignored when it's
+  /// given).
+  Future<RidePage> listApprovedRides({
+    String? pageUrl,
+    double? lat,
+    double? lng,
+    String? city,
+  }) async {
     final response = await _send(
-      () => _dio.get<dynamic>(pageUrl ?? '/rides/approved/'),
+      () => pageUrl != null
+          ? _dio.get<dynamic>(pageUrl)
+          : _dio.get<dynamic>(
+              '/rides/approved/',
+              queryParameters: {
+                'lat': ?lat,
+                'lng': ?lng,
+                if (city != null && city.isNotEmpty) 'city': city,
+              },
+            ),
     );
     _ensure(response, 200);
     return RidePage.fromJson(response.data as Map<String, dynamic>);
