@@ -21,10 +21,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   // A wide starting view rather than any single region — the rider pans/zooms
   // to wherever they actually want, so there's no "right" default beyond
   // "show enough of the world to get started".
-  static const _initialCenter = LatLng(20.0, 0.0);
-  static const _initialZoom = 2.0;
+  static const _initialCenter = LatLng(20.0, 80.0);
+  static const _initialZoom = 6.0;
   static const _minZoom = 2.0;
-  static const _maxZoom = 18.0;
+  static const _maxZoom = 16.0;
 
   late MapController _mapController;
   LatLng? _picked;
@@ -89,8 +89,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       width: 40,
                       height: 40,
                       alignment: Alignment.topCenter,
-                      child: const Icon(Icons.location_pin,
-                          size: 40, color: Colors.red),
+                      child: const Icon(
+                        Icons.location_pin,
+                        size: 40,
+                        color: Colors.red,
+                      ),
                     ),
                   ],
                 ),
@@ -103,12 +106,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             child: Card(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 child: Text(
                   picked == null
                       ? 'Tap anywhere on the map to drop a pin'
                       : '${picked.latitude.toStringAsFixed(4)}, '
-                          '${picked.longitude.toStringAsFixed(4)}',
+                            '${picked.longitude.toStringAsFixed(4)}',
                   textAlign: TextAlign.center,
                 ),
               ),

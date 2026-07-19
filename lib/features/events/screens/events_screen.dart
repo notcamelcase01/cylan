@@ -36,11 +36,11 @@ class _EventsScreenState extends State<EventsScreen> {
   String _query = '';
 
   String get _key => EventsCacheProvider.keyFor(
-        mine: _mine,
-        status: _status,
-        q: _query,
-        upcomingOnly: _upcomingOnly,
-      );
+    mine: _mine,
+    status: _status,
+    q: _query,
+    upcomingOnly: _upcomingOnly,
+  );
 
   @override
   void initState() {
@@ -62,15 +62,15 @@ class _EventsScreenState extends State<EventsScreen> {
     super.dispose();
   }
 
-  void _fetch({bool force = false}) {
-    context.read<EventsCacheProvider>().fetchFirst(
-          _key,
-          mine: _mine,
-          status: _status,
-          q: _query,
-          upcomingOnly: _upcomingOnly,
-          force: force,
-        );
+  Future<void> _fetch({bool force = false}) {
+    return context.read<EventsCacheProvider>().fetchFirst(
+      _key,
+      mine: _mine,
+      status: _status,
+      q: _query,
+      upcomingOnly: _upcomingOnly,
+      force: force,
+    );
   }
 
   void _onSearchChanged(String value) {
@@ -99,21 +99,23 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
         )
         .then((_) {
-      if (mounted) _fetch();
-    });
+          if (mounted) _fetch(force: true);
+        });
   }
 
   void _openEvent(Event event) {
     Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) =>
-              EventDetailScreen(eventId: event.id, initial: event),
-        ))
+        .push(
+          MaterialPageRoute(
+            builder: (_) =>
+                EventDetailScreen(eventId: event.id, initial: event),
+          ),
+        )
         // Coming back from detail: a subscribe/leave/edit there may have
         // changed this list, and the cache was invalidated — refetch.
         .then((_) {
-      if (mounted) _fetch();
-    });
+          if (mounted) _fetch();
+        });
   }
 
   @override
@@ -130,11 +132,15 @@ class _EventsScreenState extends State<EventsScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'checklists':
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const ChecklistsScreen()));
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
+                  );
                 case 'subscriptions':
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const MySubscriptionsScreen()));
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MySubscriptionsScreen(),
+                    ),
+                  );
               }
             },
             itemBuilder: (context) => const [
@@ -199,7 +205,10 @@ class _EventsScreenState extends State<EventsScreen> {
 
     if (events == null) {
       if (firstError != null) {
-        return _ErrorRetry(message: firstError, onRetry: () => _fetch(force: true));
+        return _ErrorRetry(
+          message: firstError,
+          onRetry: () => _fetch(force: true),
+        );
       }
       // Not loaded yet and no error: either the first fetch is in flight or is
       // about to be (scheduled post-frame / after a cache invalidation). Show a
@@ -344,12 +353,12 @@ class _FilterBar extends StatelessWidget {
   }
 
   static String _statusLabel(String s) => switch (s) {
-        'DRAFT' => 'Draft',
-        'PUBLISHED' => 'Published',
-        'CANCELLED' => 'Cancelled',
-        'COMPLETED' => 'Completed',
-        _ => s,
-      };
+    'DRAFT' => 'Draft',
+    'PUBLISHED' => 'Published',
+    'CANCELLED' => 'Cancelled',
+    'COMPLETED' => 'Completed',
+    _ => s,
+  };
 }
 
 class _EventCard extends StatelessWidget {
@@ -378,8 +387,9 @@ class _EventCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       event.name,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -391,9 +401,13 @@ class _EventCard extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 4,
                 children: [
-                  _meta(theme, Icons.calendar_today_outlined,
-                      DateFormat('d MMM yyyy · h:mm a')
-                          .format(event.startDate.toLocal())),
+                  _meta(
+                    theme,
+                    Icons.calendar_today_outlined,
+                    DateFormat(
+                      'd MMM yyyy · h:mm a',
+                    ).format(event.startDate.toLocal()),
+                  ),
                   _meta(theme, Icons.person_outline, event.creator),
                   _meta(theme, Icons.payments_outlined, feeLabel),
                   _meta(
