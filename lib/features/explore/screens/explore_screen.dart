@@ -207,13 +207,36 @@ class _NearbyList extends StatelessWidget {
   }
 }
 
-class _ApprovedRideTile extends StatelessWidget {
+class _ApprovedRideTile extends StatefulWidget {
   final Ride ride;
   const _ApprovedRideTile({required this.ride});
 
   @override
+  State<_ApprovedRideTile> createState() => _ApprovedRideTileState();
+}
+
+class _ApprovedRideTileState extends State<_ApprovedRideTile> {
+  bool _expanded = false;
+
+  /// Whether [text] would actually be clipped at 2 lines in the available
+  /// width — so the "Show more" toggle only appears when there's something to
+  /// expand, rather than on every ride that happens to have a description.
+  bool _overflowsTwoLines(String text, TextStyle? style, double maxWidth) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 2,
+      textDirection: Directionality.of(context),
+    )..layout(maxWidth: maxWidth);
+    return painter.didExceedMaxLines;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final ride = widget.ride;
     final theme = Theme.of(context);
+    final descriptionStyle = theme.textTheme.bodySmall
+        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -247,12 +270,56 @@ class _ApprovedRideTile extends StatelessWidget {
               ),
               if (ride.description.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Text(
-                  ride.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final overflows = !_expanded &&
+                        _overflowsTwoLines(
+                          ride.description,
+                          descriptionStyle,
+                          constraints.maxWidth,
+                        );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ride.description,
+                          maxLines: _expanded ? null : 2,
+                          overflow: _expanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                          style: descriptionStyle,
+                        ),
+                        if (overflows || _expanded)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => _expanded = !_expanded),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _expanded ? 'Show less' : 'Show more',
+                                    style: theme.textTheme.labelSmall
+                                        ?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Icon(
+                                    _expanded
+                                        ? Icons.expand_less
+                                        : Icons.expand_more,
+                                    size: 16,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ],
