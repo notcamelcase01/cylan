@@ -11,8 +11,6 @@ import '../../audax/screens/audax_events_screen.dart';
 import '../../auth/screens/profile_screen.dart';
 import '../../weather/providers/weather_cache_provider.dart';
 import '../providers/rides_provider.dart';
-import '../providers/suggested_rides_provider.dart';
-import '../widgets/suggestion_status_chip.dart';
 import 'offline_rides_screen.dart';
 import 'ride_detail_screen.dart';
 import 'strava_import_screen.dart';
@@ -237,30 +235,6 @@ class _RidesListScreenState extends State<RidesListScreen> {
       ),
     );
     return confirmed ?? false;
-  }
-
-  Future<void> _makeRidePublic(Ride ride) async {
-    final description = await showDialog<String>(
-      context: context,
-      builder: (context) => _SuggestRideDialog(rideName: ride.name),
-    );
-    if (description == null || !mounted) return;
-
-    final ok = await context.read<RidesProvider>().suggestPublic(ride.id, description);
-    if (!mounted) return;
-    if (ok) {
-      // The Public Rides tab is app-level too, so refresh it here — the ride
-      // now belongs there and should show up without a manual pull.
-      context.read<SuggestedRidesProvider>().refresh();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${ride.name}" was submitted for review.')),
-      );
-    } else {
-      final error = context.read<RidesProvider>().error;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error ?? "Couldn't submit that ride.")),
-      );
-    }
   }
 
   @override
@@ -559,10 +533,6 @@ class _RidesListScreenState extends State<RidesListScreen> {
                           ],
                         ),
                       ),
-                      if (ride.isSuggested) ...[
-                        SuggestionStatusChip(status: ride.publicSuggestionStatus),
-                        const SizedBox(width: 6),
-                      ],
                       if (weather != null) ...[
                         Text(weather.icon, style: const TextStyle(fontSize: 18)),
                         const SizedBox(width: 2),
@@ -575,23 +545,10 @@ class _RidesListScreenState extends State<RidesListScreen> {
                       ],
                       PopupMenuButton<String>(
                         onSelected: (value) {
-                          switch (value) {
-                            case 'rename':
-                              _renameRide(ride);
-                            case 'make_public':
-                              _makeRidePublic(ride);
-                          }
+                          if (value == 'rename') _renameRide(ride);
                         },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                          // Once opted in, the ride is managed from the Public
-                          // Rides tab instead — no second place to do the same
-                          // thing.
-                          if (!ride.isSuggested)
-                            const PopupMenuItem(
-                              value: 'make_public',
-                              child: Text('Make ride public'),
-                            ),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'rename', child: Text('Rename')),
                         ],
                       ),
                     ],
@@ -753,103 +710,6 @@ class _SearchField extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Collects the optional description for "Make ride public", with the
-/// suggestion-review disclaimer shown up front — styled like
-/// [_GoogleMapsImportDialog]'s beta-warning banner. Pops the (possibly empty)
-/// description string on submit, or null on cancel.
-class _SuggestRideDialog extends StatefulWidget {
-  final String rideName;
-  const _SuggestRideDialog({required this.rideName});
-
-  @override
-  State<_SuggestRideDialog> createState() => _SuggestRideDialogState();
-}
-
-class _SuggestRideDialogState extends State<_SuggestRideDialog> {
-  final _descriptionController = TextEditingController();
-  bool _submitting = false;
-
-  @override
-  void dispose() {
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (_submitting) return;
-    setState(() => _submitting = true);
-    Navigator.pop(context, _descriptionController.text.trim());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AlertDialog(
-      title: const Text('Make ride public'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('"${widget.rideName}"', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline,
-                      size: 20, color: theme.colorScheme.onTertiaryContainer),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This route will be suggested to nearby riders creating '
-                      "events. It's reviewed before going live, and you can "
-                      'remove it from the Public Rides tab any time.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _descriptionController,
-              maxLines: 3,
-              maxLength: 2000,
-              decoration: const InputDecoration(
-                labelText: 'Short description (optional)',
-                hintText: 'What makes this route worth riding?',
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _submitting ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _submitting ? null : _submit,
-          child: _submitting
-              ? const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Submit'),
-        ),
-      ],
     );
   }
 }

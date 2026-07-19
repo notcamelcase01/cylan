@@ -25,27 +25,12 @@ class _FakeApi implements ApiClient {
   final List<String?> searches = [];
 
   @override
-  Future<RidePage> listRides({String? pageUrl, String? search, bool? suggested}) {
+  Future<RidePage> listRides({String? pageUrl, String? search}) {
     calls.add(pageUrl);
     searches.add(search);
     final completer = Completer<RidePage>();
     pending.add(completer);
     return completer.future;
-  }
-
-  /// What `suggestRidePublic` returns next, or an [Object] to throw — same
-  /// shape as [googleMapsResult].
-  Object? suggestResult;
-  int? lastSuggestedRideId;
-  String? lastSuggestedDescription;
-
-  @override
-  Future<String> suggestRidePublic(int rideId, String description) async {
-    lastSuggestedRideId = rideId;
-    lastSuggestedDescription = description;
-    final result = suggestResult;
-    if (result is String) return result;
-    throw result ?? StateError('suggestResult not set for this test');
   }
 
   /// What `importFromGoogleMaps` does next: a [Ride] to succeed with, or any
@@ -59,6 +44,15 @@ class _FakeApi implements ApiClient {
     final result = googleMapsResult;
     if (result is Ride) return result;
     throw result ?? StateError('googleMapsResult not set for this test');
+  }
+
+  /// What `deleteRide` does next: `null` to succeed, or an [Object] to throw.
+  Object? deleteResult;
+
+  @override
+  Future<void> deleteRide(int id) async {
+    final result = deleteResult;
+    if (result != null) throw result;
   }
 
   @override
@@ -264,71 +258,56 @@ void main() {
     });
   });
 
-  group('Suggest public / patchSuggestionStatus', () {
-    test('a successful suggest patches the ride in place', () async {
-      final api = _FakeApi()..suggestResult = 'PENDING';
+  group('Delete', () {
+    test('the ride is removed from the list synchronously, before the '
+        'network call resolves', () async {
+      final api = _FakeApi();
       final provider = RidesProvider(api: api);
 
       final initial = provider.loadFirst();
-      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      api.pending[0].complete(_page([_ride(1, 'a'), _ride(2, 'b')]));
       await initial;
-      expect(provider.rides.single.publicSuggestionStatus, 'NONE');
 
-      final ok = await provider.suggestPublic(1, 'A nice loop');
-
-      expect(ok, isTrue);
-      expect(api.lastSuggestedRideId, 1);
-      expect(api.lastSuggestedDescription, 'A nice loop');
-      expect(provider.rides.single.publicSuggestionStatus, 'PENDING');
+      // Deliberately not awaited: Dismissible requires the widget gone from
+      // the list on the very next frame, which means before this Future
+      // settles, not after — see RidesProvider.delete.
+      final deleting = provider.delete(1);
+      expect(_names(provider), ['b'],
+          reason: 'the ride must be gone from the list immediately, not '
+              'only once the API call finishes');
+      await deleting;
+      expect(_names(provider), ['b']);
     });
 
-    test('a failed suggest leaves the ride untouched and surfaces the error',
-        () async {
-      final api = _FakeApi()
-        ..suggestResult = ApiException('This ride is already an approved suggestion.');
+    test('a failed delete restores the ride at its original position and '
+        'surfaces the error', () async {
+      final api = _FakeApi()..deleteResult = ApiException('Could not delete.');
       final provider = RidesProvider(api: api);
 
       final initial = provider.loadFirst();
-      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      api.pending[0].complete(_page([_ride(1, 'a'), _ride(2, 'b'), _ride(3, 'c')]));
       await initial;
 
-      final ok = await provider.suggestPublic(1, '');
+      final ok = await provider.delete(2);
 
       expect(ok, isFalse);
-      expect(provider.error, contains('already an approved suggestion'));
-      expect(provider.rides.single.publicSuggestionStatus, 'NONE');
+      expect(provider.error, 'Could not delete.');
+      expect(_names(provider), ['a', 'b', 'c'],
+          reason: 'a failed delete must put the ride back where it was');
     });
 
-    test('patchSuggestionStatus updates a loaded ride and notifies', () async {
+    test('deleting an id not in the list is a no-op', () async {
       final api = _FakeApi();
       final provider = RidesProvider(api: api);
 
       final initial = provider.loadFirst();
-      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
+      api.pending[0].complete(_page([_ride(1, 'a')]));
       await initial;
 
-      var notified = 0;
-      provider.addListener(() => notified++);
+      final ok = await provider.delete(999);
 
-      provider.patchSuggestionStatus(1, 'COMPLETED');
-      expect(provider.rides.single.publicSuggestionStatus, 'COMPLETED');
-      expect(notified, 1);
-    });
-
-    test('patchSuggestionStatus is a no-op for a ride not currently loaded',
-        () async {
-      final api = _FakeApi();
-      final provider = RidesProvider(api: api);
-
-      final initial = provider.loadFirst();
-      api.pending[0].complete(_page([_ride(1, 'Sunday loop')]));
-      await initial;
-
-      var notified = 0;
-      provider.addListener(() => notified++);
-
-      provider.patchSuggestionStatus(999, 'COMPLETED');
-      expect(notified, 0);
+      expect(ok, isFalse);
+      expect(_names(provider), ['a']);
     });
   });
 }

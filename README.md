@@ -26,10 +26,6 @@ A Flutter companion app for [cyclingngin.duckdns.org](https://cyclingngin.duckdn
 - Rename or delete a ride
 - Search rides by name
 - Pull-to-refresh, infinite scroll
-- **Make a ride public**: opt a ride into the curated-suggestion pool with an
-  optional description, for staff review; approved routes get suggested to
-  nearby event creators. Tracked on its own **Public** tab (pending review /
-  public), where you can pull it back out at any time
 
 <!-- SCREENSHOT: rides list -->
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/022d1daa-d93b-42c5-a727-55118ab3ca8f" />
@@ -164,8 +160,7 @@ lib/
 
 A file lives in `core/` if it's touched by 3+ features (or by the API client itself); otherwise it lives inside the one feature that owns it.
 
-The signed-in app is three tabs under `features/home/HomeShell` — **Rides**
-(`RidesListScreen`), **Events** (`features/events/`), and **Public**
-(`PublicRidesScreen`, the curated-suggestion opt-ins from Rides). Each tab
+The signed-in app is two tabs under `features/home/HomeShell` — **Rides**
+(`RidesListScreen`, unchanged) and **Events** (`features/events/`). Each tab
 keeps its own scroll position and provider state when you switch away and
 back (an `IndexedStack`, not a route swap).

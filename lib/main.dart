@@ -10,7 +10,6 @@ import 'features/events/providers/events_cache_provider.dart';
 import 'features/rides/providers/offline_rides_provider.dart';
 import 'features/rides/providers/rides_provider.dart';
 import 'features/rides/providers/sections_cache_provider.dart';
-import 'features/rides/providers/suggested_rides_provider.dart';
 import 'features/weather/providers/weather_cache_provider.dart';
 
 void main() {
@@ -40,10 +39,6 @@ class CylanApp extends StatelessWidget {
         // Kept fresh per login: RidesListScreen reloads it on mount, and the
         // shell (hence that screen) is rebuilt on each sign-in.
         ChangeNotifierProvider(create: (_) => RidesProvider()),
-        // Same app-level rationale as RidesProvider: the Public Rides tab's
-        // list survives tab switches, and a suggest/unsuggest made from either
-        // tab needs a stable provider instance the other can reach into.
-        ChangeNotifierProvider(create: (_) => SuggestedRidesProvider()),
         ChangeNotifierProvider(create: (_) => AudaxEventsCacheProvider()),
         ChangeNotifierProvider(create: (_) => EventsCacheProvider()),
         ChangeNotifierProvider(create: (_) => ChecklistsCacheProvider()),

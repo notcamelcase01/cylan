@@ -222,43 +222,28 @@ class RidesProvider extends ChangeNotifier {
     }
   }
 
+  /// Removes [id] from the list **before** the network call resolves, not
+  /// after. This is called from a `Dismissible.onDismissed`, whose contract
+  /// requires the widget to be gone from the tree by the very next frame —
+  /// waiting on the API first left the swiped-away card still in the list
+  /// during the request, which `Dismissible` flags as "still part of the
+  /// tree" once its dismiss animation finishes. A failure puts the ride back
+  /// (at its original position) and surfaces the error, same as everywhere
+  /// else here.
   Future<bool> delete(int id) async {
+    final index = _rides.indexWhere((r) => r.id == id);
+    if (index == -1) return false;
+    final removed = _rides[index];
+    _rides = [..._rides]..removeAt(index);
+    notifyListeners();
     try {
       await _api.deleteRide(id);
-      _rides = _rides.where((r) => r.id != id).toList();
-      notifyListeners();
       return true;
     } on ApiException catch (e) {
+      _rides = [..._rides]..insert(index, removed);
       error = e.message;
       notifyListeners();
       return false;
     }
-  }
-
-  /// Opts [id] into the curated-suggestion pool (`NONE → PENDING`), storing
-  /// [description] as the rider's note. On success, patches the local copy so
-  /// the ride's menu/chip update immediately without a refetch.
-  Future<bool> suggestPublic(int id, String description) async {
-    try {
-      final newStatus = await _api.suggestRidePublic(id, description);
-      patchSuggestionStatus(id, newStatus);
-      return true;
-    } on ApiException catch (e) {
-      error = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// Local-only patch of a ride's [Ride.publicSuggestionStatus] — no network
-  /// call. Used both by [suggestPublic] and by the Public Rides tab after it
-  /// reverts a ride, so this list stays in sync with a change made elsewhere.
-  /// No-op if [id] isn't currently loaded here.
-  void patchSuggestionStatus(int id, String status) {
-    final index = _rides.indexWhere((r) => r.id == id);
-    if (index == -1 || _rides[index].publicSuggestionStatus == status) return;
-    _rides = [..._rides];
-    _rides[index] = _rides[index].copyWith(publicSuggestionStatus: status);
-    notifyListeners();
   }
 }
