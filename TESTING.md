@@ -30,7 +30,7 @@ else:
 | Auth (signup, login, session, profile) | [TESTINGMD/auth.md](TESTINGMD/auth.md) |
 | Rides (list, upload, Strava import, Google Maps import) | [TESTINGMD/rides.md](TESTINGMD/rides.md) |
 | Audax events (calendar, filters, badges, caching) | [TESTINGMD/audax-events.md](TESTINGMD/audax-events.md) |
-| Events (browse, create, subscribe, checklists, waiver docs) | [TESTINGMD/events.md](TESTINGMD/events.md) |
+| Events (browse, create, subscribe, checklists, waiver docs, comments) | [TESTINGMD/events.md](TESTINGMD/events.md) |
 | Ride detail (map, chart, notable sections, share) | [TESTINGMD/ride-detail.md](TESTINGMD/ride-detail.md) |
 | Weather (forecast, persistence) | [TESTINGMD/weather.md](TESTINGMD/weather.md) |
 | Live tracking (GPS follow mode) | [TESTINGMD/live-tracking.md](TESTINGMD/live-tracking.md) |

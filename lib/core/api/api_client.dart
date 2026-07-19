@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/audax_event.dart';
 import '../models/checklist.dart';
 import '../models/event.dart';
+import '../models/event_comment.dart';
 import '../models/ride.dart';
 import '../models/ride_section.dart';
 import '../models/route_suggestion.dart';
@@ -639,6 +640,39 @@ class ApiClient {
         await _send(() => _dio.get<dynamic>('/events/$eventId/subscribers/'));
     _ensure(response, 200);
     return EventRoster.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // --- Event comments (public events only) --------------------------------
+
+  /// A page of an event's comments, oldest first. [pageUrl] pages through a
+  /// prior `next`/`previous` URL.
+  Future<EventCommentPage> listEventComments(
+    int eventId, {
+    String? pageUrl,
+  }) async {
+    final response = await _send(() => pageUrl != null
+        ? _dio.get<dynamic>(pageUrl)
+        : _dio.get<dynamic>('/events/$eventId/comments/'));
+    _ensure(response, 200);
+    return EventCommentPage.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Posts a comment on the event and returns it (`201`). Anyone who can see
+  /// the event may comment, subscribed or not; `400` unless the event is
+  /// public.
+  Future<EventComment> addEventComment(int eventId, String text) async {
+    final response = await _send(() => _dio
+        .post<dynamic>('/events/$eventId/comments/', data: {'text': text}));
+    _ensure(response, 201);
+    return EventComment.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Deletes the caller's own comment. `403` (surfaced as an [ApiException])
+  /// if it isn't theirs.
+  Future<void> deleteEventComment(int commentId) async {
+    final response =
+        await _send(() => _dio.delete<dynamic>('/comments/$commentId/'));
+    _ensure(response, 204);
   }
 
   // --- Event waiver document (public events, S3 presigned upload) ---------

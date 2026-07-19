@@ -66,12 +66,16 @@ bottom navigation, alongside **My Rides**.
   list everywhere it's attached, so ticking an item off shows up on every
   event using it. Once subscribed, that checklist is tickable right on the
   event
-- Subscribing to an event that has a route copies that route into your own
-  rides automatically, so you can open, follow, or tweak it like any other
+- Subscribed to an event that has a route? **"Add route to my rides"** copies
+  it into your own library on demand (idempotent — no duplicates), so you can
+  open, follow, or tweak it like any other
 - Creator tools: edit or delete your event, see the subscriber roster
 - Public events only: attach a liability-waiver PDF, uploaded straight to
   cloud storage from the device; any viewer can open it, the creator can
   replace or remove it
+- Public events carry a comment thread on the detail screen — anyone who can
+  see the event can read and post (subscribed or not) and delete their own
+  comments anytime; flat and unthreaded, no replies or editing
 - **My subscriptions** and **My checklists** screens (⋮ menu on the Events
   tab) round out the library side of this
 

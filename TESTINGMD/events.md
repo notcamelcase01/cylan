@@ -85,13 +85,24 @@ A creator can join their own event to keep a personal checklist (it counts towar
 - [ ] Once subscribed, the event detail shows a **Your checklist** section (if you attached one) with tickable items; ticking one persists (reopen to confirm) and, if it's a reused checklist, the same tick shows on **My checklists**.
 - [ ] Tap **Leave event** on an event you're subscribed to → you're unsubscribed, the button reverts to **Subscribe**, and the subscriber count drops.
 
-#### Copy-on-subscribe (route copied to your library)
-Server-side behaviour on `POST /events/{id}/subscribe/` (returns `copied_ride`).
+#### Route copy ("Add route to my rides")
+Copying the route is voluntary — subscribing alone copies nothing.
 
-- [ ] Subscribe to a **published event that has a route attached** (one you don't already own) → the confirmation reads *"Subscribed — "`<name>`" was added to your rides."*, and that ride now appears on the **Rides** tab under your account (openable, renameable like any other).
-- [ ] Subscribe to an event with **no** attached ride → plain "Subscribed." with no copy claim.
-- [ ] Subscribe to your **own** event (you already own the ride) → plain "Subscribed.", no duplicate ride created.
-- [ ] Leave and re-subscribe to the same event → you don't accumulate duplicate copies of the route (server is idempotent); leaving keeps the copy you already have.
+- [ ] Subscribe to a **published event that has a route attached** (one you don't already own) → an **Add route to my rides** button appears under the route card → tap it → the confirmation names the ride with a **View** action that opens it, and the ride now appears on the **Rides** tab under your account (openable, renameable like any other).
+- [ ] Tap **Add route to my rides** again → no duplicate is created (server is idempotent — the same copy comes back).
+- [ ] As the event's **creator** (you already own the route) → no copy button shows.
+- [ ] Leave the event → the copy you already made stays in your rides.
+
+### Comments (public events only)
+- [ ] Open a **public** event → a **Comments** section closes out the detail screen; a **private** event has no such section.
+- [ ] No comments yet → "No comments yet." shows, not a blank area.
+- [ ] Type a comment and send → it appears at the end of the thread immediately, the field clears, and the count in the section title goes up.
+- [ ] Post from a second account (not subscribed to the event) → it works — commenting doesn't require subscribing — and both comments show oldest first, each with username and time.
+- [ ] Your own comments carry a delete icon; other people's don't → delete one → confirmation dialog → it disappears and the count drops.
+- [ ] An event with more than a page of comments → **Show more comments** loads the next page without duplicating any row.
+- [ ] Post, then tap **Show more comments** → your fresh comment isn't duplicated when the page containing it loads.
+- [ ] With no connection → the section shows an error with **Try again** instead of spinning forever, and the rest of the event detail still renders.
+- [ ] Send with only whitespace → nothing is posted.
 
 ### Subscribers roster (creator only)
 - [ ] As the creator, tap **View subscribers** → a roster shows the count (and cap, if set) plus each subscriber's username and join date.

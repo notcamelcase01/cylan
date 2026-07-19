@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/models/checklist.dart';
 import '../../../core/models/event.dart';
+import '../../../core/models/event_comment.dart';
 import '../../../core/models/ride.dart';
 import '../../../core/models/subscription.dart';
 
@@ -46,6 +49,22 @@ class EventDetailProvider extends ChangeNotifier {
   /// route section, away from the subscribe/document controls).
   bool copyingRide = false;
 
+  /// The event's comments, oldest first, as loaded so far (public events
+  /// only). Grows page by page via [loadMoreComments].
+  List<EventComment> comments = [];
+
+  /// Total number of comments on the server (the page `count`), which can
+  /// exceed [comments.length] until every page is loaded.
+  int commentCount = 0;
+  bool commentsLoading = false;
+  String? commentsError;
+  String? _commentsNextUrl;
+
+  /// True while a posted comment is in flight, to disable the send button.
+  bool postingComment = false;
+
+  bool get hasMoreComments => _commentsNextUrl != null;
+
   Checklist? get myChecklist => mySubscription?.checklist;
 
   Future<void> load() async {
@@ -61,6 +80,9 @@ class EventDetailProvider extends ChangeNotifier {
       } else {
         mySubscription = null;
       }
+      // Comments exist on public events only. Not awaited: they have their own
+      // loading/error state, and the event detail shouldn't wait on them.
+      if (event?.isPublic == true) unawaited(loadComments());
     } on ApiException catch (e) {
       loadError = e.message;
     } catch (_) {
@@ -89,6 +111,93 @@ class EventDetailProvider extends ChangeNotifier {
       } while (pageUrl != null);
     } catch (_) {
       // Leave mySubscription as-is; the checklist section just won't render.
+    }
+  }
+
+  /// (Re)loads the first page of comments, replacing whatever is shown. Safe
+  /// to call again as a retry after [commentsError].
+  Future<void> loadComments() async {
+    commentsLoading = true;
+    commentsError = null;
+    notifyListeners();
+    try {
+      final page = await _api.listEventComments(eventId);
+      comments = page.results;
+      commentCount = page.count;
+      _commentsNextUrl = page.next;
+    } on ApiException catch (e) {
+      commentsError = e.message;
+    } catch (_) {
+      commentsError = "Couldn't load comments.";
+    } finally {
+      commentsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Appends the next page of comments (oldest first, so "more" means newer).
+  /// No-op when everything is already loaded or a load is running.
+  Future<void> loadMoreComments() async {
+    final next = _commentsNextUrl;
+    if (next == null || commentsLoading) return;
+    commentsLoading = true;
+    notifyListeners();
+    try {
+      final page = await _api.listEventComments(eventId, pageUrl: next);
+      // A comment posted from this screen was appended locally and can come
+      // back on a later page — drop ids we already show.
+      final known = {for (final c in comments) c.id};
+      comments = [
+        ...comments,
+        ...page.results.where((c) => !known.contains(c.id)),
+      ];
+      commentCount = page.count;
+      _commentsNextUrl = page.next;
+    } on ApiException catch (e) {
+      commentsError = e.message;
+    } catch (_) {
+      commentsError = "Couldn't load comments.";
+    } finally {
+      commentsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Posts [text] as a comment. Returns null on success, else a message. On
+  /// success the new comment is appended locally (comments run oldest→newest,
+  /// so the end is where it belongs) rather than refetching every page.
+  Future<String?> postComment(String text) async {
+    postingComment = true;
+    notifyListeners();
+    try {
+      final comment = await _api.addEventComment(eventId, text);
+      comments = [...comments, comment];
+      commentCount += 1;
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return 'Something went wrong. Please try again.';
+    } finally {
+      postingComment = false;
+      notifyListeners();
+    }
+  }
+
+  /// Deletes the caller's own comment and drops it from the list. Returns null
+  /// on success, else a message (`403` if the comment isn't theirs — the UI
+  /// only offers delete on own comments, so that's belt-and-braces).
+  Future<String?> deleteComment(int commentId) async {
+    try {
+      await _api.deleteEventComment(commentId);
+      comments = [for (final c in comments) if (c.id != commentId) c];
+      commentCount = commentCount > 0 ? commentCount - 1 : 0;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (_) {
+      return "Couldn't delete the comment.";
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/event.dart';
+import '../../../core/models/event_comment.dart';
 import '../../../core/models/checklist.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../rides/providers/rides_provider.dart';
@@ -259,6 +260,7 @@ class _EventDetailViewState extends State<_EventDetailView> {
       event: event,
       provider: provider,
       isCreator: _isCreator(event),
+      myUsername: context.read<AuthProvider>().currentUser?.username,
       onSubscribe: () => _subscribe(provider),
       onUnsubscribe: () => _unsubscribe(provider),
       onOpenUrl: _openUrl,
@@ -297,6 +299,10 @@ class _EventBody extends StatelessWidget {
   final Event event;
   final EventDetailProvider provider;
   final bool isCreator;
+
+  /// The signed-in username, for deciding which comments carry a delete
+  /// action (only your own).
+  final String? myUsername;
   final VoidCallback onSubscribe;
   final VoidCallback onUnsubscribe;
   final Future<void> Function(String url) onOpenUrl;
@@ -312,6 +318,7 @@ class _EventBody extends StatelessWidget {
     required this.event,
     required this.provider,
     required this.isCreator,
+    required this.myUsername,
     required this.onSubscribe,
     required this.onUnsubscribe,
     required this.onOpenUrl,
@@ -464,6 +471,12 @@ class _EventBody extends StatelessWidget {
           onSubscribe: onSubscribe,
           onUnsubscribe: onUnsubscribe,
         ),
+        // Comments close the page as the event's open discussion area —
+        // public events only (the API rejects comments on private ones).
+        if (event.isPublic == true) ...[
+          const SizedBox(height: 24),
+          _CommentsSection(provider: provider, myUsername: myUsername),
+        ],
         const SizedBox(height: 16),
       ],
     );
@@ -713,6 +726,225 @@ class _ChecklistBlock extends StatelessWidget {
                 controlAffinity: ListTileControlAffinity.leading,
                 dense: true,
               ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The event's flat comment thread (public events only): the loaded comments
+/// oldest→newest, a "Show more" pager, and a composer at the bottom. Anyone
+/// viewing the event can post; each rider can delete only their own.
+class _CommentsSection extends StatefulWidget {
+  final EventDetailProvider provider;
+  final String? myUsername;
+  const _CommentsSection({required this.provider, required this.myUsername});
+
+  @override
+  State<_CommentsSection> createState() => _CommentsSectionState();
+}
+
+class _CommentsSectionState extends State<_CommentsSection> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _post() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    final error = await widget.provider.postComment(text);
+    if (!mounted) return;
+    if (error != null) {
+      _snack(error);
+      return;
+    }
+    _controller.clear();
+  }
+
+  Future<void> _delete(EventComment comment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete comment?'),
+        content: const Text('This permanently deletes your comment.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final error = await widget.provider.deleteComment(comment.id);
+    if (error != null) _snack(error);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.provider;
+    final comments = provider.comments;
+    final count = provider.commentCount;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(count > 0 ? 'Comments ($count)' : 'Comments'),
+        if (comments.isEmpty && provider.commentsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (comments.isEmpty && provider.commentsError != null)
+          Row(
+            children: [
+              Expanded(child: Text(provider.commentsError!)),
+              TextButton(
+                onPressed: provider.loadComments,
+                child: const Text('Try again'),
+              ),
+            ],
+          )
+        else if (comments.isEmpty)
+          Text(
+            'No comments yet.',
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          )
+        else ...[
+          for (final comment in comments)
+            _CommentTile(
+              comment: comment,
+              isMine: comment.user == widget.myUsername,
+              onDelete: () => _delete(comment),
+            ),
+          if (provider.hasMoreComments)
+            provider.commentsLoading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Center(
+                      child: SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : TextButton(
+                    onPressed: provider.loadMoreComments,
+                    child: const Text('Show more comments'),
+                  ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                minLines: 1,
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'Add a comment…',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              tooltip: 'Post comment',
+              onPressed: provider.postingComment ? null : _post,
+              icon: provider.postingComment
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CommentTile extends StatelessWidget {
+  final EventComment comment;
+  final bool isMine;
+  final VoidCallback onDelete;
+
+  const _CommentTile({
+    required this.comment,
+    required this.isMine,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        comment.user,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      DateFormat('d MMM, h:mm a')
+                          .format(comment.createdAt.toLocal()),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(comment.text),
+              ],
+            ),
+          ),
+          if (isMine)
+            IconButton(
+              tooltip: 'Delete comment',
+              icon: const Icon(Icons.delete_outline, size: 18),
+              visualDensity: VisualDensity.compact,
+              onPressed: onDelete,
+            ),
         ],
       ),
     );
