@@ -1,3 +1,4 @@
+import 'package:cylan/features/events/screens/checklists_screen.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -31,7 +32,8 @@ class EventDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => EventDetailProvider(eventId: eventId, initial: initial)..load(),
+      create: (_) =>
+          EventDetailProvider(eventId: eventId, initial: initial)..load(),
       child: const _EventDetailView(),
     );
   }
@@ -47,8 +49,9 @@ class _EventDetailView extends StatefulWidget {
 class _EventDetailViewState extends State<_EventDetailView> {
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool _isCreator(Event event) {
@@ -57,16 +60,16 @@ class _EventDetailViewState extends State<_EventDetailView> {
   }
 
   Future<void> _openUrl(String url) async {
-    final launched =
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final launched = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!launched) _snack("Couldn't open the link.");
   }
 
   Future<void> _edit(EventDetailProvider provider, Event event) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CreateEditEventScreen(existing: event),
-      ),
+      MaterialPageRoute(builder: (_) => CreateEditEventScreen(existing: event)),
     );
     // The edit form already invalidated the list cache; refresh this screen.
     if (mounted) provider.load();
@@ -85,7 +88,8 @@ class _EventDetailViewState extends State<_EventDetailView> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Delete'),
           ),
@@ -246,11 +250,15 @@ class _EventDetailViewState extends State<_EventDetailView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(provider.loadError ?? "Couldn't load this event.",
-                  textAlign: TextAlign.center),
+              Text(
+                provider.loadError ?? "Couldn't load this event.",
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 16),
               FilledButton(
-                  onPressed: provider.load, child: const Text('Try again')),
+                onPressed: provider.load,
+                child: const Text('Try again'),
+              ),
             ],
           ),
         ),
@@ -267,23 +275,21 @@ class _EventDetailViewState extends State<_EventDetailView> {
       onOpenRide: event.ride == null
           ? null
           : () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  // Non-creators are viewing someone else's (now public) route
-                  // to preview it — open it read-only so the owner-only
-                  // smoothing control (which would 404) is hidden.
-                  builder: (_) => RideDetailScreen(
-                    rideId: event.ride!.id,
-                    readOnly: !_isCreator(event),
-                  ),
+              MaterialPageRoute(
+                // Non-creators are viewing someone else's (now public) route
+                // to preview it — open it read-only so the owner-only
+                // smoothing control (which would 404) is hidden.
+                builder: (_) => RideDetailScreen(
+                  rideId: event.ride!.id,
+                  readOnly: !_isCreator(event),
                 ),
               ),
+            ),
       onCopyRide: () => _copyRide(provider),
       onViewSubscribers: () => Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => SubscribersScreen(
-            eventId: event.id,
-            eventName: event.name,
-          ),
+          builder: (_) =>
+              SubscribersScreen(eventId: event.id, eventName: event.name),
         ),
       ),
       onUploadDocument: () => _uploadDocument(provider),
@@ -335,9 +341,7 @@ class _EventBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fee = event.entryFee;
-    final feeLabel = fee == 0
-        ? 'Free'
-        : '${_trimFee(fee)} ${event.currency}';
+    final feeLabel = fee == 0 ? 'Free' : '${_trimFee(fee)} ${event.currency}';
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -353,8 +357,9 @@ class _EventBody extends StatelessWidget {
         const SizedBox(height: 16),
         _InfoRow(
           icon: Icons.calendar_today_outlined,
-          label: DateFormat('EEE, d MMM yyyy · h:mm a')
-              .format(event.startDate.toLocal()),
+          label: DateFormat(
+            'EEE, d MMM yyyy · h:mm a',
+          ).format(event.startDate.toLocal()),
         ),
         _AssemblyRow(event: event, onOpenUrl: onOpenUrl),
         _InfoRow(icon: Icons.person_outline, label: 'By ${event.creator}'),
@@ -364,7 +369,7 @@ class _EventBody extends StatelessWidget {
           label: event.maxSubscribers == null
               ? '${event.subscriberCount} subscribed'
               : '${event.subscriberCount} / ${event.maxSubscribers} subscribed'
-                  '${event.isFull ? ' · full' : ''}',
+                    '${event.isFull ? ' · full' : ''}',
         ),
         if ((event.description ?? '').isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -414,8 +419,7 @@ class _EventBody extends StatelessWidget {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.link),
-              title: Text(link,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Text(link, maxLines: 1, overflow: TextOverflow.ellipsis),
               onTap: () => onOpenUrl(link),
             ),
         ],
@@ -423,11 +427,9 @@ class _EventBody extends StatelessWidget {
           const SizedBox(height: 16),
           _SectionTitle('Contact'),
           if ((event.contactNumber ?? '').isNotEmpty)
-            _InfoRow(
-                icon: Icons.phone_outlined, label: event.contactNumber!),
+            _InfoRow(icon: Icons.phone_outlined, label: event.contactNumber!),
           if ((event.contactEmail ?? '').isNotEmpty)
-            _InfoRow(
-                icon: Icons.email_outlined, label: event.contactEmail!),
+            _InfoRow(icon: Icons.email_outlined, label: event.contactEmail!),
           const SizedBox(height: 16),
           _DocumentSection(
             event: event,
@@ -441,9 +443,12 @@ class _EventBody extends StatelessWidget {
         if ((event.remarksTos ?? '').isNotEmpty) ...[
           const SizedBox(height: 16),
           _SectionTitle('Remarks / terms'),
-          Text(event.remarksTos!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant)),
+          Text(
+            event.remarksTos!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
         if (provider.myChecklist != null) ...[
           const SizedBox(height: 16),
@@ -451,6 +456,16 @@ class _EventBody extends StatelessWidget {
           _ChecklistBlock(
             checklist: provider.myChecklist!,
             onToggle: onToggleChecklistItem,
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
+              );
+            },
+            icon: const Icon(Icons.checklist),
+            label: const Text('View all checklists'),
           ),
         ],
         const SizedBox(height: 24),
@@ -516,9 +531,11 @@ class _SubscribeControl extends StatelessWidget {
             const Icon(Icons.info_outline, size: 20),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(isCreator
-                  ? 'Publish this event to add your own checklist.'
-                  : 'Subscriptions open once this event is published.'),
+              child: Text(
+                isCreator
+                    ? 'Publish this event to add your own checklist.'
+                    : 'Subscriptions open once this event is published.',
+              ),
             ),
           ],
         ),
@@ -540,14 +557,18 @@ class _SubscribeControl extends StatelessWidget {
               width: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : Icon(isCreator
-              ? Icons.playlist_add_check
-              : Icons.event_available_outlined),
-      label: Text(full
-          ? 'Event is full'
-          : isCreator
-              ? 'Add a checklist for yourself'
-              : 'Subscribe'),
+          : Icon(
+              isCreator
+                  ? Icons.playlist_add_check
+                  : Icons.event_available_outlined,
+            ),
+      label: Text(
+        full
+            ? 'Event is full'
+            : isCreator
+            ? 'Add a checklist for yourself'
+            : 'Subscribe',
+      ),
     );
   }
 }
@@ -587,9 +608,9 @@ class _DocumentSection extends StatelessWidget {
                   const Icon(Icons.picture_as_pdf_outlined),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(hasDoc
-                        ? 'A waiver PDF is attached.'
-                        : 'No document yet.'),
+                    child: Text(
+                      hasDoc ? 'A waiver PDF is attached.' : 'No document yet.',
+                    ),
                   ),
                   if (provider.acting)
                     const SizedBox(
@@ -613,7 +634,9 @@ class _DocumentSection extends StatelessWidget {
                           ),
                           if (hasDoc)
                             const PopupMenuItem(
-                                value: 'delete', child: Text('Remove')),
+                              value: 'delete',
+                              child: Text('Remove'),
+                            ),
                         ],
                       ),
                   ],
@@ -639,8 +662,11 @@ class _AssemblyRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.place_outlined,
-              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(
+            Icons.place_outlined,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 10),
           Expanded(child: Text(event.assemblyPoint)),
           if (mapUrl != null)
@@ -672,8 +698,11 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon,
-              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(
+            icon,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 10),
           Expanded(child: Text(label)),
         ],
@@ -702,12 +731,16 @@ class _ChecklistBlock extends StatelessWidget {
                 const Icon(Icons.checklist, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(checklist.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  child: Text(
+                    checklist.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
                 if (total > 0)
-                  Text('$done/$total',
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    '$done/$total',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
@@ -755,8 +788,9 @@ class _CommentsSectionState extends State<_CommentsSection> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _post() async {
@@ -784,7 +818,8 @@ class _CommentsSectionState extends State<_CommentsSection> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Delete'),
           ),
@@ -830,7 +865,8 @@ class _CommentsSectionState extends State<_CommentsSection> {
           Text(
             'No comments yet.',
             style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           )
         else ...[
           for (final comment in comments)
@@ -926,10 +962,12 @@ class _CommentTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      DateFormat('d MMM, h:mm a')
-                          .format(comment.createdAt.toLocal()),
+                      DateFormat(
+                        'd MMM, h:mm a',
+                      ).format(comment.createdAt.toLocal()),
                       style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant),
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -962,9 +1000,9 @@ class _SectionTitle extends StatelessWidget {
       child: Text(
         text,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w700,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
