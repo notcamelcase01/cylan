@@ -148,12 +148,12 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   }
 
   /// Whether the route weather forecast can cover [start]. The server forecasts
-  /// only within roughly ±8 days; the upper bound is trimmed to 7 to leave room
+  /// only within roughly ±10 days; the upper bound is trimmed to 9 to leave room
   /// for the finish window we seed (start + 3h) to stay inside the limit.
   bool _weatherAvailableFor(DateTime start) {
     final now = DateTime.now();
-    return start.isAfter(now.subtract(const Duration(days: 8))) &&
-        start.isBefore(now.add(const Duration(days: 7)));
+    return start.isAfter(now.subtract(const Duration(days: 10))) &&
+        start.isBefore(now.add(const Duration(days: 9)));
   }
 
   /// Loads the full attached ride (the weather screen needs its route profile
