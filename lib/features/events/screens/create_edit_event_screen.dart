@@ -152,8 +152,8 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   /// for the finish window we seed (start + 3h) to stay inside the limit.
   bool _weatherAvailableFor(DateTime start) {
     final now = DateTime.now();
-    return start.isAfter(now.subtract(const Duration(days: 10))) &&
-        start.isBefore(now.add(const Duration(days: 9)));
+    return start.isAfter(now.subtract(const Duration(days: 13))) &&
+        start.isBefore(now.add(const Duration(days: 12)));
   }
 
   /// Loads the full attached ride (the weather screen needs its route profile
@@ -253,7 +253,9 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
     }
     if (_visibility == 'PUBLIC' &&
         _contactNumberController.text.trim().isEmpty) {
-      setState(() => _error = 'A contact number is required for public events.');
+      setState(
+        () => _error = 'A contact number is required for public events.',
+      );
       return;
     }
 
@@ -298,10 +300,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
               ),
               const SizedBox(height: 16),
               _sectionLabel('When'),
-              _StartDateField(
-                startDate: _startDate,
-                onTap: _pickStartDate,
-              ),
+              _StartDateField(startDate: _startDate, onTap: _pickStartDate),
               if (_startDate != null &&
                   _rideId != null &&
                   _weatherAvailableFor(_startDate!)) ...[
@@ -323,16 +322,17 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                 onClear: _rideLabel == null
                     ? null
                     : () => setState(() {
-                          _rideId = null;
-                          _rideLabel = null;
-                        }),
+                        _rideId = null;
+                        _rideLabel = null;
+                      }),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _assemblyController,
                 decoration: const InputDecoration(
                   labelText: 'Assembly point',
-                  helperText: 'Defaults to the ride start. Your own value wins '
+                  helperText:
+                      'Defaults to the ride start. Your own value wins '
                       'and won\'t be overwritten later.',
                   helperMaxLines: 3,
                 ),
@@ -390,8 +390,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                 controller: _contactNumberController,
                 keyboardType: TextInputType.phone,
                 decoration: InputDecoration(
-                  labelText:
-                      'Contact number${isPublic ? ' *' : ''}',
+                  labelText: 'Contact number${isPublic ? ' *' : ''}',
                   helperText: isPublic
                       ? 'Required for public events'
                       : 'Used only if you make the event public',
@@ -417,7 +416,8 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                     child: TextFormField(
                       controller: _feeController,
                       keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Fee',
                         helperText: '0 = free',
@@ -458,8 +458,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _remarksController,
-                decoration:
-                    const InputDecoration(labelText: 'Remarks / terms'),
+                decoration: const InputDecoration(labelText: 'Remarks / terms'),
                 maxLines: 3,
               ),
               if (_error != null) ...[
@@ -520,12 +519,14 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
-            onPressed: () => setState(
-                () => _linkControllers.add(TextEditingController())),
+            onPressed: () =>
+                setState(() => _linkControllers.add(TextEditingController())),
             icon: const Icon(Icons.add_link, size: 18),
-            label: Text(_linkControllers.isEmpty
-                ? 'Add an external link'
-                : 'Add another link'),
+            label: Text(
+              _linkControllers.isEmpty
+                  ? 'Add an external link'
+                  : 'Add another link',
+            ),
           ),
         ),
       ],
@@ -533,23 +534,23 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   }
 
   Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 
   static String _statusLabel(String s) => switch (s) {
-        'DRAFT' => 'Draft',
-        'PUBLISHED' => 'Published',
-        'CANCELLED' => 'Cancelled',
-        'COMPLETED' => 'Completed',
-        _ => s,
-      };
+    'DRAFT' => 'Draft',
+    'PUBLISHED' => 'Published',
+    'CANCELLED' => 'Cancelled',
+    'COMPLETED' => 'Completed',
+    _ => s,
+  };
 }
 
 class _StartDateField extends StatelessWidget {
@@ -565,10 +566,7 @@ class _StartDateField extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onTap,
       icon: const Icon(Icons.calendar_today_outlined, size: 18),
-      label: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(label),
-      ),
+      label: Align(alignment: Alignment.centerLeft, child: Text(label)),
       style: OutlinedButton.styleFrom(
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -606,7 +604,10 @@ class _RideField extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.directions_bike),
-        title: Text(label!, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          label!,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

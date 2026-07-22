@@ -46,8 +46,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 10)),
-      lastDate: DateTime.now().add(const Duration(days: 10)),
+      firstDate: DateTime.now().subtract(const Duration(days: 13)),
+      lastDate: DateTime.now().add(const Duration(days: 13)),
     );
     if (date == null || !mounted) return;
     final time = await showTimePicker(
