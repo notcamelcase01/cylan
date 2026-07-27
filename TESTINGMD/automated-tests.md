@@ -37,15 +37,15 @@ flutter test --plain-name "a 401 detail body carries its status code through"
 something like:
 
 ```
-00:01 +46: All tests passed!
+00:01 +85: All tests passed!
 ```
 
-The `+46` is the number of **individual tests** that passed — not files, not
-features. So `flutter test` reporting `+46` and
+The `+85` is the number of **individual tests** that passed — not files, not
+features. So `flutter test` reporting `+85` and
 `flutter test test/core/api/api_client_test.dart` reporting `+14` aren't in
 conflict: the second is just the 14 tests that live in that one file. Today
-the 46 break down as **14 + 9 + 2 + 7 + 7 + 6 + 1** across the seven files
-below.
+the 85 break down as **14 + 12 + 2 + 7 + 19 + 11 + 6 + 7 + 6 + 1** across the
+ten files below.
 
 A failure looks like `+15 -1:` (fifteen passed, one failed), prints the
 expected vs. actual value, and exits non-zero — so CI catches it too. Add
@@ -73,7 +73,7 @@ all still run — only the network is faked.
   route outside India) surfaces its server message rather than throwing a raw
   type; a dropped connection resolves to an `ApiException`, not a hang.
 
-### `test/features/rides/rides_provider_test.dart` — 9 tests
+### `test/features/rides/rides_provider_test.dart` — 12 tests
 
 Request races on the rides list. These stage two overlapping requests and
 settle them **in the wrong order on purpose** — the thing you can't do by hand.
@@ -105,6 +105,46 @@ lists from its metadata alone without needing to open the full GPS track;
 newer metadata fields) are still listed via a fallback, get upgraded in place
 the first time they're read so the slow path only runs once, and survive a
 save directory that can't be read at all.
+
+### `test/features/rides/control_point_store_test.dart` — 19 tests
+
+The rider's personal control points: the on-disk store and the provider over
+it. Storage covers a round-trip through a real temp directory, rides staying
+separate, and two files-from-elsewhere cases — an unreadable file reads as
+empty **without deleting it** (unlike the weather cache, these can't be
+refetched from anywhere), and a point written by a newer build with a type this
+one doesn't know still loads, falling back to a default icon.
+
+The rest covers importing an event's points, which is where the rules live.
+Two of these exist because of a bug the first design shipped with: control
+points are stored per **ride**, but a ride can back any number of events, so
+anything that seeded them automatically made two events fight over one file.
+Hence `two events using the same organiser id do not collide` (organiser ids
+are unique only within their own event) and `removing one event leaves the
+other and the rider alone`.
+
+The others: an import copies points in and places them along the route;
+importing the same event twice adds nothing; removing an event re-arms its
+import while deleting the rider's own points never does; and an imported point
+can be neither edited nor deleted singly, so a point attributed to an organiser
+really is what they published.
+
+### `test/core/models/ride_profile_test.dart` — 11 tests
+
+The route geometry both control-point add-methods depend on: `pointAtKm`
+(distance → coordinate, interpolating between samples and clamping outside the
+ride) and its inverse `nearestDistanceKm` (coordinate → distance, for a point
+tapped on the map), including that the two round-trip. Plus an empty profile —
+no track, zero total, and no throw — since a ride without GPS reaches these.
+
+### `test/core/models/event_test.dart` — 6 tests
+
+The event payload's control-point fields, in both directions. Reading:
+`default_control_points` parses (and is empty on a summary payload, which never
+carries it), an unknown `type` from a newer server falls back to `checkpoint`,
+and a parsed point has no `sourceEventId` until the rider imports it. Writing:
+`toEventJson` sends **only** what the API stores — no client-derived distance,
+no `sourceEventId` — and round-trips.
 
 ### `test/features/audax/audax_events_cache_provider_test.dart` — 7 tests
 

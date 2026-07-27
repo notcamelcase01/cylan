@@ -7,6 +7,7 @@ import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/auth_gate.dart';
 import 'features/events/providers/checklists_cache_provider.dart';
 import 'features/events/providers/events_cache_provider.dart';
+import 'features/rides/providers/control_points_provider.dart';
 import 'features/rides/providers/offline_rides_provider.dart';
 import 'features/rides/providers/rides_provider.dart';
 import 'features/rides/providers/sections_cache_provider.dart';
@@ -34,6 +35,10 @@ class CylanApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WeatherCacheProvider()..restore()),
         ChangeNotifierProvider(create: (_) => SectionsCacheProvider()),
         ChangeNotifierProvider(create: (_) => OfflineRidesProvider()),
+        // The rider's own control points, read off disk per ride on demand.
+        // App-level so the ride detail, its map and live tracking all render
+        // the same set without each reloading it.
+        ChangeNotifierProvider(create: (_) => ControlPointsProvider()),
         // App-level (not screen-scoped) so a ride copied in from an event's
         // route can refresh the Rides tab, and the list survives tab switches.
         // Kept fresh per login: RidesListScreen reloads it on mount, and the

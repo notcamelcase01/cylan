@@ -10,8 +10,10 @@ import '../../../core/services/connectivity_service.dart';
 import '../../../core/widgets/elevation_chart.dart';
 import '../../../core/widgets/route_map.dart';
 import '../../tracking/screens/live_tracking_screen.dart';
+import '../providers/control_points_provider.dart';
 import '../providers/offline_rides_provider.dart';
 import '../services/offline_ride_store.dart';
+import '../widgets/control_points_card.dart';
 import '../widgets/notable_sections_card.dart';
 import 'ride_detail_screen.dart';
 
@@ -50,8 +52,12 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
   }
 
   Future<void> _load() async {
-    final loaded =
-        await context.read<OfflineRidesProvider>().load(widget.rideId);
+    final offline = context.read<OfflineRidesProvider>();
+    // Control points live on this device already, so they need no connection —
+    // they're as available here as the saved track itself.
+    final controlPoints = context.read<ControlPointsProvider>();
+    final loaded = await offline.load(widget.rideId);
+    await controlPoints.load(widget.rideId);
     if (!mounted) return;
     setState(() {
       _offlineRide = loaded;
@@ -173,6 +179,8 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
                 child: RouteMap(
                   profile: profile,
                   weatherPoints: weather,
+                  controlPoints:
+                      context.watch<ControlPointsProvider>().pointsFor(ride.id),
                   showBasemap: false,
                   highlightLocation: _highlightIndex == null
                       ? null
@@ -231,6 +239,16 @@ class _OfflineRideDetailScreenState extends State<OfflineRideDetailScreen> {
                   );
                 },
               ),
+            ),
+          ],
+          // Fully editable offline: they're stored on the device and never
+          // uploaded, so there's nothing here a connection would add.
+          if (hasTrack) ...[
+            const SizedBox(height: 24),
+            ControlPointsCard(
+              rideId: ride.id,
+              profile: profile,
+              showBasemap: false,
             ),
           ],
           ..._buildSectionsAndWeather(

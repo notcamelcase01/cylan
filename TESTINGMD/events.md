@@ -31,6 +31,17 @@ everything below is manual-only for now.
 - [ ] Under **More**, tap **Add an external link** → a link row appears; add a second with **Add another link**; fill both → both show on the detail screen and each opens in the browser when tapped. Tap a row's **×** → that link is removed. Add remarks → they show on the detail too.
 - [ ] Type your own assembly point → it's saved and shown; leave it blank with a ride attached → the ride's start is shown instead (server-resolved).
 
+### Control points
+- [ ] With a ride attached, an **Add control points** button appears under
+      **Route**; with no ride attached it's absent.
+- [ ] Set some, save, reopen the editor → the button reads "*N* control points".
+- [ ] On the event detail, they're listed under **Organiser's control points**
+      with an **Add to my control points** button — they are *not* applied to
+      anyone automatically.
+
+Full coverage, including importing as a rider and the two-events-one-route
+case, is in [control-points.md](control-points.md#importing--as-a-rider).
+
 ### Attach a route — **manual only** (native file picker / OAuth / GPS)
 - [ ] On the create/edit screen, tap **Attach a ride** → a sheet offers **Choose from my rides**, **Upload a file**, **Import from Strava**, **Import from Google Maps**.
 - [ ] **Choose from my rides** → a paginated picker of your existing rides opens → pick one → it's attached and shown on the form.

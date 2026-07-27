@@ -10,10 +10,12 @@ import '../../../core/models/event_comment.dart';
 import '../../../core/models/checklist.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../rides/screens/ride_detail_screen.dart';
+import '../../rides/providers/control_points_provider.dart';
 import '../providers/checklists_cache_provider.dart';
 import '../providers/event_detail_provider.dart';
 import '../providers/events_cache_provider.dart';
 import '../widgets/checklist_picker_sheet.dart';
+import '../widgets/event_control_points_card.dart';
 import '../widgets/event_status_chip.dart';
 import 'create_edit_event_screen.dart';
 import 'subscribers_screen.dart';
@@ -251,6 +253,14 @@ class _EventDetailViewState extends State<_EventDetailView> {
                 builder: (_) => RideDetailScreen(
                   rideId: event.ride!.id,
                   readOnly: !_isCreator(event),
+                  // Drawn read-only on the route map so the organiser's
+                  // markers reach the rider whether or not they've imported
+                  // them — and suppressed once they have, since the rider's
+                  // own copies are then on the map instead.
+                  eventControlPoints: event.defaultControlPoints,
+                  eventPointsImported: context
+                      .read<ControlPointsProvider>()
+                      .hasImported(event.ride!.id, event.id),
                 ),
               ),
             ),
@@ -357,6 +367,16 @@ class _EventBody extends StatelessWidget {
               onTap: onOpenRide,
             ),
           ),
+          // Offered, never applied on its own — the rider decides whether the
+          // organiser's points join their copy of this route.
+          if (event.defaultControlPoints.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            EventControlPointsCard(
+              eventId: event.id,
+              rideId: event.ride!.id,
+              points: event.defaultControlPoints,
+            ),
+          ],
         ],
         // Its own section, not folded into the route card above: the like
         // targets the *ride* (`event.ride!.id`, via the same likeRide/unlikeRide

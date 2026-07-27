@@ -69,7 +69,9 @@ bottom navigation, alongside **My Rides**.
 - Subscribed to an event that has a route? **"Add route to my rides"** copies
   it into your own library on demand (idempotent — no duplicates), so you can
   open, follow, or tweak it like any other
-- Creator tools: edit or delete your event, see the subscriber roster
+- Creator tools: edit or delete your event, see the subscriber roster, and
+  publish **control points** for its route that subscribers can add to their
+  own (see below)
 - Public events only: attach a liability-waiver PDF, uploaded straight to
   cloud storage from the device; any viewer can open it, the creator can
   replace or remove it
@@ -87,6 +89,7 @@ bottom navigation, alongside **My Rides**.
 - Adjustable smoothing (50–500 m window) to trade off noise vs. detail in the elevation/gradient profile
 - Distance, ascent, descent, and max grade stats
 - Notable sections: the ride's climbs and descents, listed and tappable
+- Control points: your own pins on the route (see below)
 - Share a snapshot of the ride (map + stats + chart) as an image
 - Save a ride for offline use (see below)
 
@@ -107,6 +110,41 @@ bottom navigation, alongside **My Rides**.
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/ff6b00e0-fa6c-4f35-a3e6-b8b2cc7aa862" />
 
 
+### Control points
+Your own pins on a route — water stops, checkpoints, junctions to watch — on
+**any** ride you can open, including ones you don't own.
+
+- Add one by tapping a full-screen map, or by typing a **distance along the
+  route** in km. Either way it's stored as plain coordinates, and either way
+  the point knows how far along the route it sits, so the list stays in route
+  order
+- Six types (checkpoint, water, food, mechanical, rest stop, caution), each
+  with its own pin colour and icon on the map
+- Shown on the ride map and while **live tracking** — read-only there, since
+  riding isn't the time to be editing them
+- **Personal and device-local**: they persist across restarts but are never
+  uploaded, so they don't touch a route's owner or anyone else. They live on
+  the one device (a reinstall loses them)
+- **Work fully offline** — reading *and* adding. They're stored on the device
+  and never sent anywhere, so there's nothing a connection would add: an
+  offline ride shows its control points on the map and in the card, and you
+  can add, edit and delete them mid-ride with no signal
+
+An event's organiser can publish a set of control points for its route. Those
+are always an **offer**, never applied to you automatically: the event screen
+lists them, and an **Add to my control points** button copies them onto your
+own route. Once added they're yours — but they stay exactly as the organiser
+set them, so a point attributed to an organiser really is theirs. You can drop
+that event's points as a group whenever you like, which leaves your own points
+and any other event's alone.
+
+Nothing is imported for you because one route can back **any number of
+events** — automatic seeding would have to guess which event's list you meant,
+and two events sharing a route would overwrite each other's points every time
+you moved between them. Asking removes the guess.
+
+<!-- SCREENSHOT: control points on the ride detail -->
+
 ### Weather
 - Pick a start/finish time window and fetch a forecast along the route
 - Per-point temperature, feels-like, wind speed/direction, and precipitation
@@ -123,7 +161,7 @@ bottom navigation, alongside **My Rides**.
 
 ### Offline rides
 - Save a route, its weather snapshot, and notable sections for use with no connection
-- Offline routes show the route as a line (no street background) and weather frozen at save time; notable sections and live GPS tracking still work offline
+- Offline routes show the route as a line (no street background) and weather frozen at save time; notable sections, control points and live GPS tracking still work offline
 - Manage/delete saved offline rides separately from the online list
 
 <!-- SCREENSHOT: offline rides list -->

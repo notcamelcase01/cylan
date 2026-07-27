@@ -3,16 +3,19 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/models/control_point.dart';
 import '../../../core/models/ride.dart';
 import '../../../core/widgets/elevation_chart.dart';
 import '../../../core/widgets/route_map.dart';
 import '../../tracking/screens/live_tracking_screen.dart';
 import '../../weather/providers/weather_cache_provider.dart';
 import '../../weather/screens/weather_screen.dart';
+import '../providers/control_points_provider.dart';
 import '../providers/offline_rides_provider.dart';
 import '../providers/ride_detail_provider.dart';
 import '../providers/sections_cache_provider.dart';
 import '../services/share_image_service.dart';
+import '../widgets/control_points_card.dart';
 import '../widgets/notable_sections_card.dart';
 
 class RideDetailScreen extends StatelessWidget {
@@ -23,17 +26,36 @@ class RideDetailScreen extends StatelessWidget {
   /// smoothing control, whose `POST .../smoothing/` is owner-only and would 404.
   final bool readOnly;
 
+  /// The organiser's control points, when this route was opened from an event.
+  ///
+  /// Shown read-only on the map so an organiser's warning reaches the rider
+  /// whether or not they've imported it — importing is offered on the event
+  /// screen, and is what copies these into the rider's own editable list. Once
+  /// [eventPointsImported] is true they're hidden here, because the rider now
+  /// has their own copies and drawing both would double every pin.
+  final List<ControlPoint> eventControlPoints;
+  final bool eventPointsImported;
+
   const RideDetailScreen({
     super.key,
     required this.rideId,
     this.readOnly = false,
+    this.eventControlPoints = const [],
+    this.eventPointsImported = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => RideDetailProvider()..load(rideId),
-      child: _RideDetailView(rideId: rideId, readOnly: readOnly),
+      child: _RideDetailView(
+        rideId: rideId,
+        readOnly: readOnly,
+        // Only worth drawing while the rider hasn't taken them; after that
+        // their own copies stand in.
+        eventControlPoints:
+            eventPointsImported ? const [] : eventControlPoints,
+      ),
     );
   }
 }
@@ -41,7 +63,13 @@ class RideDetailScreen extends StatelessWidget {
 class _RideDetailView extends StatefulWidget {
   final int rideId;
   final bool readOnly;
-  const _RideDetailView({required this.rideId, required this.readOnly});
+  final List<ControlPoint> eventControlPoints;
+
+  const _RideDetailView({
+    required this.rideId,
+    required this.readOnly,
+    required this.eventControlPoints,
+  });
 
   @override
   State<_RideDetailView> createState() => _RideDetailViewState();
@@ -65,6 +93,8 @@ class _RideDetailViewState extends State<_RideDetailView> {
         // no-ops if already cached) and cache app-wide, so they survive
         // navigating into a section and can be read at offline-save time.
         context.read<SectionsCacheProvider>().fetch(widget.rideId);
+        // The rider's own control points, read off disk once per ride.
+        context.read<ControlPointsProvider>().load(widget.rideId);
       }
     });
   }
@@ -219,6 +249,13 @@ class _RideDetailViewState extends State<_RideDetailView> {
         context.watch<WeatherCacheProvider>().pointsFor(ride.id) ?? const [];
     final sections =
         context.watch<SectionsCacheProvider>().sectionsFor(ride.id) ?? const [];
+    // The rider's own points, plus the organiser's shown alongside them until
+    // the rider imports (at which point the caller stops passing them, because
+    // the rider's copies take over).
+    final controlPoints = [
+      ...context.watch<ControlPointsProvider>().pointsFor(ride.id),
+      ...widget.eventControlPoints,
+    ];
 
     final theme = Theme.of(context);
 
@@ -229,6 +266,7 @@ class _RideDetailViewState extends State<_RideDetailView> {
         child: RouteMap(
           profile: profile!,
           weatherPoints: weatherPoints,
+          controlPoints: controlPoints,
           highlightLocation: _highlightIndex == null
               ? null
               : LatLng(
@@ -407,6 +445,12 @@ class _RideDetailViewState extends State<_RideDetailView> {
             ),
           ],
         ),
+        // Personal, device-local annotations — offered on every route the
+        // rider can open, including ones they don't own.
+        if (hasTrack) ...[
+          const SizedBox(height: 24),
+          ControlPointsCard(rideId: ride.id, profile: profile),
+        ],
         if (profile != null && sections.isNotEmpty) ...[
           const SizedBox(height: 24),
           NotableSectionsCard(

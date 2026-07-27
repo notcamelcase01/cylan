@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/ride.dart';
 import '../../../core/widgets/route_map.dart';
+import '../../rides/providers/control_points_provider.dart';
 import '../providers/live_tracking_provider.dart';
 
 /// Below this speed, GPS heading is too noisy to be worth showing (it can
@@ -55,6 +56,20 @@ class _LiveTrackingView extends StatefulWidget {
 }
 
 class _LiveTrackingViewState extends State<_LiveTrackingView> {
+  @override
+  void initState() {
+    super.initState();
+    // Load the rider's control points here rather than relying on whichever
+    // screen pushed us to have done it — live tracking is reachable from the
+    // offline ride detail too, and reads off disk with no network either way.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context
+          .read<ControlPointsProvider>()
+          .load(context.read<LiveTrackingProvider>().ride.id);
+    });
+  }
+
   /// Whether the map is snapping to the rider. On by default; the rider drops
   /// out of it by panning the map, and taps Recenter to switch it back on.
   bool _following = true;
@@ -224,6 +239,12 @@ class _LiveTrackingViewState extends State<_LiveTrackingView> {
           profile: profile,
           liveLocation: liveLocation,
           liveHeading: liveHeading,
+          // Read-only here: riding is when the rider most needs to see their
+          // water stops and checkpoints coming up, but not when they should be
+          // editing them.
+          controlPoints: context.watch<ControlPointsProvider>().pointsFor(
+            context.read<LiveTrackingProvider>().ride.id,
+          ),
           showBasemap: widget.showBasemap,
           followLocation: _following,
           onUserPannedAway: () {

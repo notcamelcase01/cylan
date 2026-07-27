@@ -4,12 +4,14 @@ import 'package:provider/provider.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/models/control_point.dart';
 import '../../../core/models/event.dart';
 import '../../../core/models/ride.dart';
 import '../../../core/models/route_suggestion.dart';
 import '../../weather/screens/weather_screen.dart';
 import '../providers/events_cache_provider.dart';
 import '../widgets/add_ride_sheet.dart';
+import 'event_control_points_screen.dart';
 import '../widgets/route_suggestions_panel.dart';
 
 /// Create a new event, or edit an existing one when [existing] is passed. One
@@ -61,6 +63,10 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
   int? _rideId;
   String? _rideLabel;
 
+  /// The control points every subscriber will start with. Edited on their own
+  /// screen and saved with the event, not separately.
+  List<ControlPoint> _controlPoints = [];
+
   bool _saving = false;
   String? _error;
 
@@ -91,6 +97,7 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
       _status = e.status;
       _currency = e.currency;
       _startDate = e.startDate;
+      _controlPoints = [...e.defaultControlPoints];
       if (e.ride != null) {
         _rideId = e.ride!.id;
         _rideLabel =
@@ -241,7 +248,25 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
       'remarks_tos': _remarksController.text.trim(),
       'external_links': links,
       'max_subscribers': int.tryParse(_maxSubsController.text.trim()),
+      // Always sent, so clearing every point on an edit actually clears them.
+      'default_control_points': [
+        for (final point in _controlPoints) point.toEventJson(),
+      ],
     };
+  }
+
+  Future<void> _editControlPoints() async {
+    final rideId = _rideId;
+    if (rideId == null) return;
+    final edited = await Navigator.of(context).push<List<ControlPoint>>(
+      MaterialPageRoute(
+        builder: (_) => EventControlPointsScreen(
+          rideId: rideId,
+          initial: _controlPoints,
+        ),
+      ),
+    );
+    if (edited != null) setState(() => _controlPoints = edited);
   }
 
   Future<void> _save() async {
@@ -324,8 +349,29 @@ class _CreateEditEventScreenState extends State<CreateEditEventScreen> {
                     : () => setState(() {
                         _rideId = null;
                         _rideLabel = null;
+                        // The points were placed on that route; without it
+                        // there's nothing for them to sit on.
+                        _controlPoints = [];
                       }),
               ),
+              // Control points live on the route, so there's nothing to place
+              // until one is attached.
+              if (_rideId != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _editControlPoints,
+                    icon: const Icon(Icons.push_pin_outlined, size: 18),
+                    label: Text(
+                      _controlPoints.isEmpty
+                          ? 'Add control points'
+                          : '${_controlPoints.length} control '
+                                '${_controlPoints.length == 1 ? "point" : "points"}',
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               TextFormField(
                 controller: _assemblyController,

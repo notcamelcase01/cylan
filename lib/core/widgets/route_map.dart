@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../models/control_point.dart';
 import '../models/ride_profile.dart';
 import '../models/weather_point.dart';
 
@@ -69,30 +70,6 @@ List<WeatherPoint> _thinWeather(List<WeatherPoint> points) {
   return kept;
 }
 
-/// The route coordinate at [km] along the ride, linearly interpolated from the
-/// profile's parallel distance/lat/lng samples. Used to move an overlapping
-/// weather bubble back along the route to a real point on the line.
-LatLng _routePointAtKm(RideProfile profile, double km) {
-  final d = profile.distanceKm;
-  if (d.isEmpty) return LatLng(profile.latitude.first, profile.longitude.first);
-  if (km <= d.first) {
-    return LatLng(profile.latitude.first, profile.longitude.first);
-  }
-  for (var i = 1; i < d.length; i++) {
-    if (d[i] >= km) {
-      final span = d[i] - d[i - 1];
-      final t = span <= 0 ? 0.0 : (km - d[i - 1]) / span;
-      return LatLng(
-        profile.latitude[i - 1] +
-            (profile.latitude[i] - profile.latitude[i - 1]) * t,
-        profile.longitude[i - 1] +
-            (profile.longitude[i] - profile.longitude[i - 1]) * t,
-      );
-    }
-  }
-  return LatLng(profile.latitude.last, profile.longitude.last);
-}
-
 /// The map position for each thinned weather bubble. A bubble whose native
 /// position lands within the min-distance gap of one already placed is shifted
 /// back along the route by [_weatherBubbleMinDistanceFraction] of total
@@ -110,7 +87,7 @@ List<LatLng> _placeWeatherBubbles(
   for (final wp in bubbles) {
     var pos = LatLng(wp.latitude, wp.longitude);
     if (placed.any((q) => _distance(pos, q) < minMeters)) {
-      pos = _routePointAtKm(profile, wp.distanceKm - shiftKm);
+      pos = profile.pointAtKm(wp.distanceKm - shiftKm);
     }
     placed.add(pos);
   }
@@ -160,6 +137,19 @@ class RouteMap extends StatefulWidget {
   /// the parent can drop out of follow mode and show its Recenter button.
   final VoidCallback? onUserPannedAway;
 
+  /// The rider's personal control points, drawn as labelled pins.
+  final List<ControlPoint> controlPoints;
+
+  /// Called when a control point's pin is tapped, so the parent can offer to
+  /// edit or delete it.
+  final void Function(ControlPoint)? onControlPointTap;
+
+  /// When non-null the map is in "place a control point" mode: the next tap
+  /// anywhere on the map reports its coordinates here instead of doing
+  /// nothing. The parent is responsible for showing that the mode is active
+  /// and for leaving it.
+  final void Function(LatLng)? onMapTapForControlPoint;
+
   const RouteMap({
     super.key,
     required this.profile,
@@ -172,6 +162,9 @@ class RouteMap extends StatefulWidget {
     this.contextRoute,
     this.followLocation = true,
     this.onUserPannedAway,
+    this.controlPoints = const [],
+    this.onControlPointTap,
+    this.onMapTapForControlPoint,
   });
 
   @override
@@ -254,6 +247,9 @@ class _RouteMapState extends State<RouteMap> {
         minZoom: _minZoom,
         maxZoom: _maxZoom,
         onPositionChanged: _onPositionChanged,
+        onTap: widget.onMapTapForControlPoint == null
+            ? null
+            : (_, point) => widget.onMapTapForControlPoint!(point),
         cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
         // With no basemap (offline), give the route line a plain, theme-aware
         // backdrop instead of the grey that would flash behind absent tiles.
@@ -370,7 +366,50 @@ class _RouteMapState extends State<RouteMap> {
                 ),
             ],
           ),
+        // Last, so the rider's own pins sit above the weather bubbles and stay
+        // tappable where the two overlap.
+        if (widget.controlPoints.isNotEmpty)
+          MarkerLayer(
+            markers: [
+              for (final cp in widget.controlPoints)
+                Marker(
+                  point: cp.position,
+                  width: 24,
+                  height: 24,
+                  // Anchor the pin's point at the coordinate rather than its
+                  // centre, so it marks the spot the way a map pin should.
+                  alignment: Alignment.topCenter,
+                  child: GestureDetector(
+                    onTap: widget.onControlPointTap == null
+                        ? null
+                        : () => widget.onControlPointTap!(cp),
+                    child: _ControlPointPin(point: cp),
+                  ),
+                ),
+            ],
+          ),
       ],
+    );
+  }
+}
+
+/// A control point's map pin: the type's icon on the type's colour.
+class _ControlPointPin extends StatelessWidget {
+  final ControlPoint point;
+  const _ControlPointPin({required this.point});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: point.type.color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 2),
+        ],
+      ),
+      child: Icon(point.type.icon, color: Colors.white, size: 12),
     );
   }
 }

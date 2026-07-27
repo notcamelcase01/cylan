@@ -1,3 +1,5 @@
+import 'control_point.dart';
+
 /// An app-native, user-created event (`/api/events/`). Distinct from the
 /// read-only Audax calendar — this is something a rider creates, others
 /// subscribe to, and only the creator can edit.
@@ -73,6 +75,14 @@ class Event {
   /// Whether *you* are subscribed.
   final bool? isSubscribed;
 
+  /// The organiser's control points along the route.
+  ///
+  /// An **offer**, never applied on its own: a rider imports them when they
+  /// choose (see `ControlPointsProvider.importFromEvent`), which copies them
+  /// into their own device-local set. Nothing is ever sent back. Empty when the
+  /// organiser set none.
+  final List<ControlPoint> defaultControlPoints;
+
   const Event({
     required this.id,
     required this.name,
@@ -101,6 +111,7 @@ class Event {
     this.isPublic,
     this.isPaid,
     this.isSubscribed,
+    this.defaultControlPoints = const [],
   });
 
   factory Event.fromJson(Map<String, dynamic> json) {
@@ -142,6 +153,10 @@ class Event {
       isPublic: json['is_public'] as bool?,
       isPaid: json['is_paid'] as bool?,
       isSubscribed: json['is_subscribed'] as bool?,
+      defaultControlPoints:
+          (json['default_control_points'] as List<dynamic>? ?? [])
+              .map((e) => ControlPoint.fromEventJson(e as Map<String, dynamic>))
+              .toList(),
     );
   }
 }

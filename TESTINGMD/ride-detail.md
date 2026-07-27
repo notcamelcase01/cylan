@@ -25,6 +25,11 @@
 - [ ] Open a section that has rain in its forecast **and** is a descent → a caution callout appears ("Rain on a descent — surfaces may be slick…").
 - [ ] Go back → you return to the ride detail with the sections list intact.
 
+### Control points
+See [control-points.md](control-points.md) — they show on this screen, but
+there's enough to them (two add-methods, event defaults, reset) to warrant
+their own file.
+
 ### Share image — **manual only** (native share sheet)
 - [ ] Tap the share icon → the share sheet opens with a generated snapshot.
 - [ ] The snapshot looks correct: map, stats, current chart, and "Cylan" branding.
